@@ -1,5 +1,7 @@
 import { type APIRequestContext, type Page, expect, test } from "@playwright/test";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 /*
   Live mode against a real product API (`python -m api.product`, started by playwright.config.ts on
@@ -164,20 +166,219 @@ test("live: backend validation errors are shown with the server's reason and cod
   expect(mockCode).toEqual([]);
 });
 
-test("live: experiment screens say the experiment backend does not exist yet", async ({ page, request }) => {
+/*
+  The experiment → promotion → deployment → inference lifecycle, on the product API's real job
+  workers and a local deterministic fake model (tests/e2e_product_server.py: `e2e-desk` answers
+  order-desk prompts, `e2e-desk-slow` answers the same after 1.5 s). The dataset is the dogfood
+  order desk (tests/fixtures/dogfood/order_desk.csv), registered as tests/dogfood_support.py does.
+*/
+const ORDER_DESK = readFileSync(resolve(process.cwd(), "..", "tests", "fixtures", "dogfood", "order_desk.csv"));
+const INSTRUCTIONS = "Name the destination city of the order, using only the order record.";
+const NEW_ORDER = {
+  question: "Which city does order ORD-2001 ship to?",
+  order_record: "Order ORD-2001 (1 x tarp) was packed at the Reno warehouse and ships to Lincoln by Ground on 2026-04-01.",
+};
+
+const api = async (request: APIRequestContext, method: "GET" | "POST", path: string, data?: unknown) => {
+  const res = method === "GET" ? await request.get(`${API}/${path}`, { headers: AUTH }) : await request.post(`${API}/${path}`, { data, headers: AUTH });
+  return { status: res.status(), body: await res.json() };
+};
+
+/** A project with the order desk registered (question → answer, order record as context) and split. */
+async function orderDesk(request: APIRequestContext) {
+  const pid = await apiProject(request, `E2E lifecycle ${unique()}`);
+  const datasetId = `desk-${unique()}`;
+  const up = await request.post(`${API}/projects/${pid}/uploads?format=csv&filename=order_desk.csv`, {
+    data: ORDER_DESK,
+    headers: { "Content-Type": "application/octet-stream", ...AUTH },
+  });
+  expect(up.status()).toBe(201);
+  const reg = await api(request, "POST", `uploads/${(await up.json()).upload_id}/register`, {
+    dataset_id: datasetId,
+    name: "Order desk",
+    input_columns: ["question"],
+    context_columns: ["order_record"],
+    target_columns: ["answer"],
+    row_ids: "column",
+    id_column: "ticket_id",
+  });
+  expect(reg.status).toBe(201);
+  const splits = await api(request, "POST", `datasets/${datasetId}/versions/1/splits`, { seed: 11, validation_bps: 2000, test_bps: 2000 });
+  expect(splits.status).toBe(201);
+  return { pid, datasetId };
+}
+
+async function modelHash(request: APIRequestContext, name: string): Promise<string> {
+  const { body } = await api(request, "GET", "models");
+  const m = body.models.find((x: { name: string }) => x.name === name);
+  expect(m, `model ${name} in the E2E registry`).toBeTruthy();
+  return m.model_hash;
+}
+
+/** Fills the live configure screen; returns its submit button. */
+async function configure(page: Page, request: APIRequestContext, pid: string, datasetId: string, model: string, taskId: string) {
+  await page.goto(`/projects/${pid}/experiments/new?dataset=${datasetId}`);
+  await page.getByLabel("Model", { exact: true }).selectOption(await modelHash(request, model));
+  await page.getByLabel("Task id", { exact: true }).fill(taskId);
+  await page.getByLabel("Instructions").fill(INSTRUCTIONS);
+  const submit = page.getByRole("button", { name: "Create experiment" });
+  await expect(submit).toBeEnabled();
+  return submit;
+}
+
+/** Lets the server answer the first matching POST, then drops the answer before the browser sees it. */
+async function dropFirstResponse(page: Page, pattern: string) {
+  const keys: string[] = [];
+  await page.route(pattern, async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    keys.push(route.request().headers()["idempotency-key"] ?? "");
+    if (keys.length === 1) {
+      await route.fetch(); // the server receives and handles it…
+      return route.abort("connectionreset"); // …and the browser never sees the answer
+    }
+    return route.fallback();
+  });
+  return keys;
+}
+
+test("live: experiment → results → promotion → publish → stage → production → inference, idempotent end to end", async ({ page, request }) => {
+  test.setTimeout(240_000);
+  const mockCode = watchForMockCode(page);
+  const { pid, datasetId } = await orderDesk(request);
+  const lineage = `${datasetId}.desk`;
+
+  // Configure and create; the first response is lost, so the UI retries with the same key and the
+  // server answers with the experiment it already created
+  const createKeys = await dropFirstResponse(page, "**/api/v1/experiments");
+  await (await configure(page, request, pid, datasetId, "e2e-desk", "desk")).click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${pid}/experiments/j-[0-9a-f]+$`), { timeout: 20_000 });
+  await expect(page.getByTestId("create-replayed")).toBeVisible();
+  expect(createKeys).toHaveLength(2);
+  expect(createKeys[0]).toMatch(/^exp/);
+  expect(createKeys[1]).toBe(createKeys[0]);
+  const jobId = page.url().split("/").pop()!;
+  const jobs = (await api(request, "GET", "experiments")).body.jobs.filter((j: { dataset_id: string }) => j.dataset_id === datasetId);
+  expect(jobs.map((j: { job_id: string }) => j.job_id)).toEqual([jobId]); // one intent, one experiment
+
+  // Real progress until the workers finish
+  const root = page.getByTestId("live-experiment");
+  await expect(root).toHaveAttribute("data-state", "COMPLETED", { timeout: 150_000 });
+  await expect(page.getByTestId("unit-row")).toHaveCount(3);
+  const job = (await api(request, "GET", `experiments/${jobId}`)).body;
+  const evaluations = job.units.reduce((n: number, u: { candidate_evaluations: number }) => n + u.candidate_evaluations, 0);
+  await expect(page.getByTestId("progress-evaluations")).toContainText(String(evaluations));
+
+  // Results: the artifact's numbers, verified by the server
+  await page.getByRole("link", { name: "Results and provenance" }).click();
+  const artifact = (await api(request, "GET", `experiments/${jobId}/artifact`)).body.artifact;
+  const rows = page.getByTestId("result-row");
+  await expect(rows).toHaveCount(artifact.runs.length);
+  for (const run of artifact.runs) {
+    const score = run.champion?.validation.score_mean;
+    await expect(page.locator(`[data-testid="result-row"][data-strategy="${run.strategy}"]`).getByTestId("result-score")).toHaveText(
+      score === null || score === undefined ? "—" : score.toFixed(3),
+    );
+  }
+  await expect(page.getByTestId("verified")).toContainText("Verified by the server");
+  await expect(page.getByTestId("test-runs")).toContainText(": 0");
+
+  // Promotion opens the held-out split once and records the decision
+  await page.getByRole("button", { name: /Promote on the held-out test split/ }).click();
+  const promotion = page.getByTestId("promotion");
+  await expect(promotion).toHaveAttribute("data-decision", "PROMOTED", { timeout: 60_000 });
+  const promo = (await api(request, "GET", `experiments/${jobId}/promotion`)).body;
+  await expect(page.getByTestId("heldout-score")).toHaveText(promo.record.heldout.challenger.score_mean.toFixed(3));
+
+  // Workflows: publish; then someone else stages the version first. The server refuses the page's
+  // now-outdated stage (it checks the version's state before the revision fence, so with one
+  // version this is invalid_deployment_transition; stale_deployment needs a second version and is
+  // covered against the recorded server response in src/pages/live/live.test.tsx)
+  await page.getByRole("link", { name: "Publish and deploy in Workflows" }).click();
+  const panel = page.locator(`[data-testid="lineage"][data-lineage="${lineage}"]`);
+  await panel.getByRole("button", { name: "Publish champion" }).click();
+  const version = panel.getByTestId("version-row");
+  await expect(version).toHaveAttribute("data-state", "CREATED");
+  const versionId = (await version.getAttribute("data-version-id"))!;
+  await expect(panel).toHaveAttribute("data-revision", "0");
+  expect((await api(request, "POST", `workflows/${versionId}/stage`, { expected_revision: 0 })).status).toBe(200); // behind the UI's back
+  await panel.getByRole("button", { name: "Stage" }).click();
+  await expect(panel.getByTestId("deployment-error").getByTestId("error-code")).toHaveText("invalid_deployment_transition");
+  await expect(panel.getByTestId("deployment-error")).toContainText("only a CREATED version can be staged");
+  // a promote made against the revision the page read before the reload is fenced
+  const fenced = await api(request, "POST", `workflows/${versionId}/promote`, { expected_revision: 0 });
+  expect([fenced.status, fenced.body.error.code]).toEqual([409, "stale_deployment"]);
+  await expect(panel).toHaveAttribute("data-revision", "1");
+  await expect(version).toHaveAttribute("data-state", "STAGING");
+  await panel.getByRole("button", { name: "Promote to production" }).click();
+  await expect(panel.getByTestId("production-version")).toHaveText(versionId);
+  await expect(panel).toHaveAttribute("data-revision", "2");
+
+  // Inference: the first answer is lost; the retry with the same key gets the original output back
+  const invokeKeys = await dropFirstResponse(page, `**/api/v1/deployments/${lineage}/invoke`);
+  const invoke = panel.getByTestId("invoke-panel");
+  for (const [name, value] of Object.entries(NEW_ORDER)) await invoke.getByRole("textbox", { name: new RegExp(`^${name}`) }).fill(value);
+  await invoke.getByRole("button", { name: /^Run on production/ }).click();
+  await expect(invoke.getByTestId("inference-output")).toContainText('"answer": "Lincoln"', { timeout: 30_000 });
+  await expect(invoke.getByTestId("send-status")).toHaveAttribute("data-phase", "replayed");
+  expect(invokeKeys).toHaveLength(2);
+  expect(invokeKeys[1]).toBe(invokeKeys[0]);
+  const inferenceId = (await invoke.getByTestId("inference").getAttribute("data-inference-id"))!;
+  const stored = (await api(request, "GET", `inferences/${inferenceId}`)).body;
+  expect(stored.status).toBe("SUCCEEDED");
+  expect(stored.workflow_version).toBe(versionId);
+
+  // Running it again is a new intent: a new key and a new invocation
+  await invoke.getByRole("button", { name: /^Run on production/ }).click();
+  await expect(invoke.getByTestId("inference")).not.toHaveAttribute("data-inference-id", inferenceId);
+  await expect(invoke.getByTestId("inference-output")).toContainText("Lincoln");
+  expect(invokeKeys).toHaveLength(3);
+  expect(invokeKeys[2]).not.toBe(invokeKeys[0]);
+
+  expect(mockCode).toEqual([]);
+});
+
+test("live: a running experiment shows real progress and can be cancelled", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  const mockCode = watchForMockCode(page);
+  const { pid, datasetId } = await orderDesk(request);
+  await (await configure(page, request, pid, datasetId, "e2e-desk-slow", "slow")).click();
+  const root = page.getByTestId("live-experiment");
+  await expect(root).toHaveAttribute("data-state", /PENDING|RUNNING/, { timeout: 20_000 });
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(root).toHaveAttribute("data-state", "CANCELLED", { timeout: 60_000 });
+  const jobId = (await root.getAttribute("data-job-id"))!;
+  expect((await api(request, "GET", `experiments/${jobId}`)).body.state).toBe("CANCELLED");
+  await expect(page.getByRole("button", { name: "Cancel" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Results and provenance" })).toHaveCount(0);
+
+  // the experiment list shows the same server state
+  await page.goto(`/projects/${pid}/experiments`);
+  await expect(page.locator(`[data-testid="job-row"][data-job-id="${jobId}"]`).getByTestId("job-state")).toHaveAttribute("data-state", "CANCELLED");
+  expect(mockCode).toEqual([]);
+});
+
+test("live: experiment screens use the product API, never a simulation, and name the workspace", async ({ page, request }) => {
   const mockCode = watchForMockCode(page);
   const apiCalls: string[] = [];
+  const credentials: string[] = [];
   page.on("request", (r) => {
-    const path = new URL(r.url()).pathname;
-    if (path.startsWith("/api/")) apiCalls.push(path);
+    const url = new URL(r.url());
+    if (url.pathname.startsWith("/api/")) apiCalls.push(`${r.method()} ${url.pathname}`);
+    if (r.headers()["authorization"]) credentials.push(url.pathname); // the browser never holds the key
   });
   const pid = await apiProject(request, `E2E experiments ${unique()}`);
-  for (const path of ["experiments", "experiments/new", "workflows"]) {
-    await page.goto(`/projects/${pid}/${path}`);
-    await expect(page.getByTestId("experiment-backend-required")).toContainText("not built yet");
-    await expect(page.getByRole("link", { name: "#23" })).toBeVisible();
-    await expect(page.getByTestId("simulated-notice")).toHaveCount(0);
-  }
-  expect(apiCalls.filter((p) => !/^\/api\/v1\/projects(\/[^/]+)?$/.test(p))).toEqual([]);
+  await page.goto(`/projects/${pid}/experiments`);
+  await expect(page.getByText("No experiments in this project")).toBeVisible();
+  await expect(page.getByTestId("workspace")).toContainText("Workspace");
+  await page.goto(`/projects/${pid}/experiments/new`);
+  await expect(page.getByText("Register a dataset first.")).toBeVisible();
+  await page.goto(`/projects/${pid}/workflows`);
+  await expect(page.getByText("No workflow lineages yet")).toBeVisible();
+  await expect(page.getByTestId("simulated-notice")).toHaveCount(0);
+  await expect(page.getByTestId("experiment-backend-required")).toHaveCount(0);
+  expect(apiCalls).toContain("GET /api/v1/experiments");
+  expect(apiCalls).toContain("GET /api/v1/models");
+  expect(apiCalls).toContain("GET /api/v1/workspace");
+  expect(credentials).toEqual([]);
   expect(mockCode).toEqual([]);
 });
