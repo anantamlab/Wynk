@@ -1,0 +1,5643 @@
+{
+ "list_models": {
+  "status": 200,
+  "body": {
+   "models": [
+    {
+     "name": "dogfood-desk",
+     "provider": "openai_compatible",
+     "adapter": "openai_compatible",
+     "model_id": "dogfood-desk-model",
+     "revision": "2026-10-01",
+     "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+     "context_window": null,
+     "capabilities": [
+      "structured_output",
+      "text_generation"
+     ],
+     "pricing": {
+      "version": "dogfood-2026-10",
+      "currency": "USD",
+      "prompt_per_million": 1.0,
+      "completion_per_million": 2.0
+     },
+     "enabled": true
+    }
+   ]
+  }
+ },
+ "create_experiment": {
+  "status": 201,
+  "body": {
+   "job_id": "j-91c5aea377ff472989a60593",
+   "state": "PENDING",
+   "reason": null,
+   "detail": null,
+   "created_at": "2026-10-31T19:48:47.347+00:00",
+   "updated_at": "2026-10-31T19:48:47.347+00:00",
+   "cancel_requested_at": null,
+   "definition_hash": "e6b90742842d6674cdfde6db98a11cd692d60961c7765eba029af0232dbe0fc4",
+   "contract_hash": "18d4a33811e1cf756371e7e6e1b4ab6b72c6e54c88a7adce72b8b6933aed1580",
+   "protocol_hash": "fac930cf44d2ce5b7b3bb16fda4b4abb1441317dff8a1316ee7887000f507a92",
+   "problem_id": "c72ebffb292b002da591984d6bf84ef2c56a580f61884586edbae74ba2ba589d",
+   "experiment_id": "4b2faad550fffe39bf57b782a71b66ebe86e8a620d633773c5f8189c4e02fa90",
+   "dataset_id": "order-desk",
+   "dataset_version": 1,
+   "task_id": "order-desk",
+   "synthetic": false,
+   "budget": {
+    "max_candidate_evaluations": 4,
+    "max_model_calls": null,
+    "max_tokens": null,
+    "max_wall_time_s": null,
+    "max_cost": null
+   },
+   "strategies": [
+    "fixed",
+    "random",
+    "aco"
+   ],
+   "seeds": [
+    0
+   ],
+   "units": [
+    {
+     "strategy": "fixed",
+     "seed": 0,
+     "run_id": "f94621017dee0b05de239001cd6aea9444e6001dd237ecc38efc8bde5a73ffbc",
+     "state": "PENDING",
+     "reason": null,
+     "detail": null,
+     "lease_owner": null,
+     "rounds": 0,
+     "candidate_evaluations": 0,
+     "usage": {
+      "candidate_evaluations": 0,
+      "workflow_runs": 0,
+      "model_calls": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "tokens": 0,
+      "tool_calls": 0,
+      "retries": 0,
+      "wall_time_s": 0.0,
+      "cost": 0.0
+     },
+     "settled_usage": {
+      "candidate_evaluations": 0,
+      "workflow_runs": 0,
+      "model_calls": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "tokens": 0,
+      "tool_calls": 0,
+      "retries": 0,
+      "wall_time_s": 0.0,
+      "cost": 0.0
+     },
+     "open_reservation": null,
+     "champion_genome_hash": null,
+     "champion_validation_score": null,
+     "curve": [],
+     "stop_reason": null,
+     "attempts": {
+      "completed": 0,
+      "in_flight": 0,
+      "errored": 0,
+      "reused_by_proof": 0
+     },
+     "sources": null
+    },
+    {
+     "strategy": "random",
+     "seed": 0,
+     "run_id": "e704ae12b14ee9c20e10440b79054eeb26f5f2353c2229fa3a460aabbdf92dc0",
+     "state": "PENDING",
+     "reason": null,
+     "detail": null,
+     "lease_owner": null,
+     "rounds": 0,
+     "candidate_evaluations": 0,
+     "usage": {
+      "candidate_evaluations": 0,
+      "workflow_runs": 0,
+      "model_calls": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "tokens": 0,
+      "tool_calls": 0,
+      "retries": 0,
+      "wall_time_s": 0.0,
+      "cost": 0.0
+     },
+     "settled_usage": {
+      "candidate_evaluations": 0,
+      "workflow_runs": 0,
+      "model_calls": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "tokens": 0,
+      "tool_calls": 0,
+      "retries": 0,
+      "wall_time_s": 0.0,
+      "cost": 0.0
+     },
+     "open_reservation": null,
+     "champion_genome_hash": null,
+     "champion_validation_score": null,
+     "curve": [],
+     "stop_reason": null,
+     "attempts": {
+      "completed": 0,
+      "in_flight": 0,
+      "errored": 0,
+      "reused_by_proof": 0
+     },
+     "sources": null
+    },
+    {
+     "strategy": "aco",
+     "seed": 0,
+     "run_id": "515fec6c02a79d1da5c3c703319076cb954f3e2ec3aba3aff509da8dd528f0e2",
+     "state": "PENDING",
+     "reason": null,
+     "detail": null,
+     "lease_owner": null,
+     "rounds": 0,
+     "candidate_evaluations": 0,
+     "usage": {
+      "candidate_evaluations": 0,
+      "workflow_runs": 0,
+      "model_calls": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "tokens": 0,
+      "tool_calls": 0,
+      "retries": 0,
+      "wall_time_s": 0.0,
+      "cost": 0.0
+     },
+     "settled_usage": {
+      "candidate_evaluations": 0,
+      "workflow_runs": 0,
+      "model_calls": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "tokens": 0,
+      "tool_calls": 0,
+      "retries": 0,
+      "wall_time_s": 0.0,
+      "cost": 0.0
+     },
+     "open_reservation": null,
+     "champion_genome_hash": null,
+     "champion_validation_score": null,
+     "curve": [],
+     "stop_reason": null,
+     "attempts": {
+      "completed": 0,
+      "in_flight": 0,
+      "errored": 0,
+      "reused_by_proof": 0
+     },
+     "sources": null
+    }
+   ],
+   "artifact_available": false
+  }
+ },
+ "get_experiment": {
+  "status": 200,
+  "body": {
+   "job_id": "j-91c5aea377ff472989a60593",
+   "state": "COMPLETED",
+   "reason": null,
+   "detail": null,
+   "created_at": "2026-10-31T19:48:47.347+00:00",
+   "updated_at": "2026-10-31T19:48:53.688+00:00",
+   "cancel_requested_at": null,
+   "definition_hash": "e6b90742842d6674cdfde6db98a11cd692d60961c7765eba029af0232dbe0fc4",
+   "contract_hash": "18d4a33811e1cf756371e7e6e1b4ab6b72c6e54c88a7adce72b8b6933aed1580",
+   "protocol_hash": "fac930cf44d2ce5b7b3bb16fda4b4abb1441317dff8a1316ee7887000f507a92",
+   "problem_id": "c72ebffb292b002da591984d6bf84ef2c56a580f61884586edbae74ba2ba589d",
+   "experiment_id": "4b2faad550fffe39bf57b782a71b66ebe86e8a620d633773c5f8189c4e02fa90",
+   "dataset_id": "order-desk",
+   "dataset_version": 1,
+   "task_id": "order-desk",
+   "synthetic": false,
+   "budget": {
+    "max_candidate_evaluations": 4,
+    "max_model_calls": null,
+    "max_tokens": null,
+    "max_wall_time_s": null,
+    "max_cost": null
+   },
+   "strategies": [
+    "fixed",
+    "random",
+    "aco"
+   ],
+   "seeds": [
+    0
+   ],
+   "units": [
+    {
+     "strategy": "fixed",
+     "seed": 0,
+     "run_id": "f94621017dee0b05de239001cd6aea9444e6001dd237ecc38efc8bde5a73ffbc",
+     "state": "COMPLETED",
+     "reason": null,
+     "detail": null,
+     "lease_owner": null,
+     "rounds": 1,
+     "candidate_evaluations": 1,
+     "usage": {
+      "candidate_evaluations": 1,
+      "completion_tokens": 120,
+      "cost": 0.00084,
+      "model_calls": 15,
+      "prompt_tokens": 600,
+      "retries": 0,
+      "tokens": 720,
+      "tool_calls": 0,
+      "wall_time_s": 0.17712119999123388,
+      "workflow_runs": 15
+     },
+     "settled_usage": {
+      "candidate_evaluations": 1,
+      "completion_tokens": 120,
+      "cost": 0.00084,
+      "model_calls": 15,
+      "prompt_tokens": 600,
+      "retries": 0,
+      "tokens": 720,
+      "tool_calls": 0,
+      "wall_time_s": 0.17712119999123388,
+      "workflow_runs": 15
+     },
+     "open_reservation": null,
+     "champion_genome_hash": "081bf16800a19bff91f4dec9443fc5f8b3f92eec0f7e1182d216aaa40aec741e",
+     "champion_validation_score": 0.0,
+     "curve": [
+      {
+       "best_so_far_genome_hash": "081bf16800a19bff91f4dec9443fc5f8b3f92eec0f7e1182d216aaa40aec741e",
+       "best_so_far_pass_rate": 0.0,
+       "best_so_far_score": 0.0,
+       "cumulative_completion_tokens": 120,
+       "cumulative_cost": 0.00084,
+       "cumulative_e2e_wall_s": 0.8760140000013052,
+       "cumulative_execution_s": 0.17712119999123388,
+       "cumulative_model_calls": 15,
+       "cumulative_prompt_tokens": 600,
+       "cumulative_tokens": 720,
+       "evaluation": 1,
+       "genome_hash": "081bf16800a19bff91f4dec9443fc5f8b3f92eec0f7e1182d216aaa40aec741e",
+       "max_score_so_far": 0.0,
+       "optimization_score": 0.0,
+       "score": 0.0,
+       "validation_pass_rate": 0.0
+      }
+     ],
+     "stop_reason": "strategy_exhausted",
+     "attempts": {
+      "completed": 15,
+      "in_flight": 0,
+      "errored": 0,
+      "reused_by_proof": 0
+     },
+     "sources": {
+      "run_id": "strategy.fixed.seed.0.run_id",
+      "rounds": "strategy.fixed.seed.0.rounds",
+      "candidate_evaluations": "strategy.fixed.seed.0.usage.candidate_evaluations",
+      "usage": "strategy.fixed.seed.0.usage",
+      "settled_usage": "strategy.fixed.seed.0.usage",
+      "champion_genome_hash": "strategy.fixed.seed.0.champion.genome_hash",
+      "champion_validation_score": "strategy.fixed.seed.0.champion.validation.score_mean",
+      "curve": "strategy.fixed.seed.0.curve",
+      "stop_reason": "strategy.fixed.seed.0.stop_reason"
+     }
+    },
+    {
+     "strategy": "random",
+     "seed": 0,
+     "run_id": "e704ae12b14ee9c20e10440b79054eeb26f5f2353c2229fa3a460aabbdf92dc0",
+     "state": "COMPLETED",
+     "reason": null,
+     "detail": null,
+     "lease_owner": null,
+     "rounds": 2,
+     "candidate_evaluations": 4,
+     "usage": {
+      "candidate_evaluations": 4,
+      "completion_tokens": 600,
+      "cost": 0.004200000000000001,
+      "model_calls": 75,
+      "prompt_tokens": 3000,
+      "retries": 0,
+      "tokens": 3600,
+      "tool_calls": 15,
+      "wall_time_s": 0.3587349000154063,
+      "workflow_runs": 60
+     },
+     "settled_usage": {
+      "candidate_evaluations": 4,
+      "completion_tokens": 600,
+      "cost": 0.004200000000000001,
+      "model_calls": 75,
+      "prompt_tokens": 3000,
+      "retries": 0,
+      "tokens": 3600,
+      "tool_calls": 15,
+      "wall_time_s": 0.3587349000154063,
+      "workflow_runs": 60
+     },
+     "open_reservation": null,
+     "champion_genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+     "champion_validation_score": 1.0,
+     "curve": [
+      {
+       "best_so_far_genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+       "best_so_far_pass_rate": 1.0,
+       "best_so_far_score": 1.0,
+       "cumulative_completion_tokens": 240,
+       "cumulative_cost": 0.00168,
+       "cumulative_e2e_wall_s": 0.6002617999984068,
+       "cumulative_execution_s": 0.12158120001186035,
+       "cumulative_model_calls": 30,
+       "cumulative_prompt_tokens": 1200,
+       "cumulative_tokens": 1440,
+       "evaluation": 1,
+       "genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+       "max_score_so_far": 1.0,
+       "optimization_score": 1.0,
+       "score": 1.0,
+       "validation_pass_rate": 1.0
+      },
+      {
+       "best_so_far_genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+       "best_so_far_pass_rate": 1.0,
+       "best_so_far_score": 1.0,
+       "cumulative_completion_tokens": 360,
+       "cumulative_cost": 0.00252,
+       "cumulative_e2e_wall_s": 1.2058617000002414,
+       "cumulative_execution_s": 0.1827361000214296,
+       "cumulative_model_calls": 45,
+       "cumulative_prompt_tokens": 1800,
+       "cumulative_tokens": 2160,
+       "evaluation": 2,
+       "genome_hash": "cb2566dff515c9813df7672b27af9844b4c8c7f8333bb8ffdd129c4b385b5995",
+       "max_score_so_far": 1.0,
+       "optimization_score": 0.0,
+       "score": 0.0,
+       "validation_pass_rate": 0.0
+      },
+      {
+       "best_so_far_genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+       "best_so_far_pass_rate": 1.0,
+       "best_so_far_score": 1.0,
+       "cumulative_completion_tokens": 480,
+       "cumulative_cost": 0.00336,
+       "cumulative_e2e_wall_s": 1.864567900000111,
+       "cumulative_execution_s": 0.2665541000133089,
+       "cumulative_model_calls": 60,
+       "cumulative_prompt_tokens": 2400,
+       "cumulative_tokens": 2880,
+       "evaluation": 3,
+       "genome_hash": "25c7e0866770bd701df11374bbee97a8846584d6b316b586c4c2a09706b61b27",
+       "max_score_so_far": 1.0,
+       "optimization_score": 0.0,
+       "score": 0.0,
+       "validation_pass_rate": 0.0
+      }
+     ],
+     "stop_reason": "candidate_evaluations",
+     "attempts": {
+      "completed": 60,
+      "in_flight": 0,
+      "errored": 0,
+      "reused_by_proof": 0
+     },
+     "sources": {
+      "run_id": "strategy.random.seed.0.run_id",
+      "rounds": "strategy.random.seed.0.rounds",
+      "candidate_evaluations": "strategy.random.seed.0.usage.candidate_evaluations",
+      "usage": "strategy.random.seed.0.usage",
+      "settled_usage": "strategy.random.seed.0.usage",
+      "champion_genome_hash": "strategy.random.seed.0.champion.genome_hash",
+      "champion_validation_score": "strategy.random.seed.0.champion.validation.score_mean",
+      "curve": "strategy.random.seed.0.curve",
+      "stop_reason": "strategy.random.seed.0.stop_reason"
+     }
+    },
+    {
+     "strategy": "aco",
+     "seed": 0,
+     "run_id": "515fec6c02a79d1da5c3c703319076cb954f3e2ec3aba3aff509da8dd528f0e2",
+     "state": "COMPLETED",
+     "reason": null,
+     "detail": null,
+     "lease_owner": null,
+     "rounds": 2,
+     "candidate_evaluations": 4,
+     "usage": {
+      "candidate_evaluations": 4,
+      "completion_tokens": 840,
+      "cost": 0.00588,
+      "model_calls": 105,
+      "prompt_tokens": 4200,
+      "retries": 0,
+      "tokens": 5040,
+      "tool_calls": 30,
+      "wall_time_s": 0.6074768000144104,
+      "workflow_runs": 60
+     },
+     "settled_usage": {
+      "candidate_evaluations": 4,
+      "completion_tokens": 840,
+      "cost": 0.00588,
+      "model_calls": 105,
+      "prompt_tokens": 4200,
+      "retries": 0,
+      "tokens": 5040,
+      "tool_calls": 30,
+      "wall_time_s": 0.6074768000144104,
+      "workflow_runs": 60
+     },
+     "open_reservation": null,
+     "champion_genome_hash": "a0441b5f4f9553ae2b2f3daa916934ac7ffc1a7b77daa8c215c7b29224eeea44",
+     "champion_validation_score": 1.0,
+     "curve": [
+      {
+       "best_so_far_genome_hash": "a0441b5f4f9553ae2b2f3daa916934ac7ffc1a7b77daa8c215c7b29224eeea44",
+       "best_so_far_pass_rate": 1.0,
+       "best_so_far_score": 1.0,
+       "cumulative_completion_tokens": 360,
+       "cumulative_cost": 0.0025199999999999997,
+       "cumulative_e2e_wall_s": 0.82700130000012,
+       "cumulative_execution_s": 0.31159879998813267,
+       "cumulative_model_calls": 45,
+       "cumulative_prompt_tokens": 1800,
+       "cumulative_tokens": 2160,
+       "evaluation": 1,
+       "genome_hash": "a0441b5f4f9553ae2b2f3daa916934ac7ffc1a7b77daa8c215c7b29224eeea44",
+       "max_score_so_far": 1.0,
+       "optimization_score": 1.0,
+       "score": 1.0,
+       "validation_pass_rate": 1.0
+      },
+      {
+       "best_so_far_genome_hash": "a0441b5f4f9553ae2b2f3daa916934ac7ffc1a7b77daa8c215c7b29224eeea44",
+       "best_so_far_pass_rate": 1.0,
+       "best_so_far_score": 1.0,
+       "cumulative_completion_tokens": 600,
+       "cumulative_cost": 0.0042,
+       "cumulative_e2e_wall_s": 1.5429989999975078,
+       "cumulative_execution_s": 0.44415670001035323,
+       "cumulative_model_calls": 75,
+       "cumulative_prompt_tokens": 3000,
+       "cumulative_tokens": 3600,
+       "evaluation": 2,
+       "genome_hash": "786286f8507dc126fe9a55861750e146f04e9455384b5a8f66eb79a5bc40c57b",
+       "max_score_so_far": 1.0,
+       "optimization_score": 1.0,
+       "score": 1.0,
+       "validation_pass_rate": 1.0
+      },
+      {
+       "best_so_far_genome_hash": "a0441b5f4f9553ae2b2f3daa916934ac7ffc1a7b77daa8c215c7b29224eeea44",
+       "best_so_far_pass_rate": 1.0,
+       "best_so_far_score": 1.0,
+       "cumulative_completion_tokens": 720,
+       "cumulative_cost": 0.005039999999999999,
+       "cumulative_e2e_wall_s": 2.1507893999987573,
+       "cumulative_execution_s": 0.5179774000062025,
+       "cumulative_model_calls": 90,
+       "cumulative_prompt_tokens": 3600,
+       "cumulative_tokens": 4320,
+       "evaluation": 3,
+       "genome_hash": "cf06d58fff88342a626ba4924f89f497cc79518f71365f5b7a50e44fefc7d1aa",
+       "max_score_so_far": 1.0,
+       "optimization_score": 0.0,
+       "score": 0.0,
+       "validation_pass_rate": 0.0
+      }
+     ],
+     "stop_reason": "candidate_evaluations",
+     "attempts": {
+      "completed": 60,
+      "in_flight": 0,
+      "errored": 0,
+      "reused_by_proof": 0
+     },
+     "sources": {
+      "run_id": "strategy.aco.seed.0.run_id",
+      "rounds": "strategy.aco.seed.0.rounds",
+      "candidate_evaluations": "strategy.aco.seed.0.usage.candidate_evaluations",
+      "usage": "strategy.aco.seed.0.usage",
+      "settled_usage": "strategy.aco.seed.0.usage",
+      "champion_genome_hash": "strategy.aco.seed.0.champion.genome_hash",
+      "champion_validation_score": "strategy.aco.seed.0.champion.validation.score_mean",
+      "curve": "strategy.aco.seed.0.curve",
+      "stop_reason": "strategy.aco.seed.0.stop_reason"
+     }
+    }
+   ],
+   "artifact_available": true
+  }
+ },
+ "list_experiments": {
+  "status": 200,
+  "body": {
+   "jobs": [
+    {
+     "job_id": "j-91c5aea377ff472989a60593",
+     "state": "COMPLETED",
+     "reason": null,
+     "created_at": "2026-10-31T19:48:47.347+00:00",
+     "updated_at": "2026-10-31T19:48:53.688+00:00",
+     "experiment_id": "4b2faad550fffe39bf57b782a71b66ebe86e8a620d633773c5f8189c4e02fa90",
+     "dataset_id": "order-desk",
+     "dataset_version": 1,
+     "task_id": "order-desk",
+     "synthetic": false,
+     "artifact_available": true
+    }
+   ]
+  }
+ },
+ "get_artifact": {
+  "status": 200,
+  "body": {
+   "job_id": "j-91c5aea377ff472989a60593",
+   "experiment_id": "4b2faad550fffe39bf57b782a71b66ebe86e8a620d633773c5f8189c4e02fa90",
+   "artifact": {
+    "experiment_id": "4b2faad550fffe39bf57b782a71b66ebe86e8a620d633773c5f8189c4e02fa90",
+    "fairness": {
+     "budget": {
+      "max_candidate_evaluations": 4,
+      "max_cost": null,
+      "max_model_calls": null,
+      "max_tokens": null,
+      "max_wall_time_s": null
+     },
+     "candidate_evaluation": "one proposed workflow run on every optimization row x trials (feedback) and every validation row x trials (selection)",
+     "enforcement": "reserve complete candidate from contract limits -> run -> settle",
+     "fixed_baseline_rule": "fixed_shortest/1",
+     "unit": "candidate_evaluation"
+    },
+    "identity": {
+     "plan": {
+      "batch_size": 2,
+      "budget": {
+       "max_candidate_evaluations": 4,
+       "max_cost": null,
+       "max_model_calls": null,
+       "max_tokens": null,
+       "max_wall_time_s": null
+      },
+      "dataset_manifest_hash": null,
+      "expected_model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+      "expected_prompt_version": "mvp-3",
+      "lcb_z": 1.0,
+      "model": {
+       "model": "dogfood-desk-model",
+       "parameters": {},
+       "provider": "openai_compatible"
+      },
+      "seeds": [
+       0
+      ],
+      "strategies": [
+       "fixed",
+       "random",
+       "aco"
+      ],
+      "trials": 1
+     },
+     "problem": {
+      "constraints_hash": "b65cb4de4f37515136acd1909f0b1623f9a7724aec7a8a7b9c9af12ed4e8cec5",
+      "contract_version": 1,
+      "dataset_content_hash": "5da878fdf441c82dd76e2863ae9855fc5580f140718dfd74eb1f75800a11a9df",
+      "dataset_hash": "51232785a966db51530dcfd60eec8ab281d0b1524f8759cc0744f9368089247a",
+      "dataset_id": "order-desk",
+      "dataset_manifest_hash": null,
+      "dataset_version": 1,
+      "evaluation_hash": "88964a3cf9224e3c8a28a590339c9df8011d2586b1206c4799eb077230c5e171",
+      "evaluator_config": {
+       "case_sensitive": false,
+       "normalize_whitespace": false
+      },
+      "evaluator_kind": "exact_match",
+      "evaluator_run_version": "exact_match/1+fitness/mvp-2",
+      "evaluator_version": "exact_match/1",
+      "experiment_identity_id": "745a852324eb61fe39f82a49c39dd3fe7d1435c6f6132f0b4bdb97030fc984dc",
+      "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+      "ledger_version": "experiment-ledger/2",
+      "model": {
+       "model": "dogfood-desk-model",
+       "parameters": {},
+       "provider": "openai_compatible"
+      },
+      "model_config_hash": "03eaf8df3322de0c89a61296e073e193e06f061bc0f687457bfe9ac34ebb4106",
+      "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+      "objective_hash": "10d136caeadfbef5c46feb334f5c82299f3e8aaf539125e22f4ffbd0090a7045",
+      "pricing": "registry-pricing/1:619e22171af775eafecc4c785ebdcba7073221721eb80aa6434122ea63dabc23",
+      "problem_id": "c72ebffb292b002da591984d6bf84ef2c56a580f61884586edbae74ba2ba589d",
+      "prompt_template_version": "mvp-3",
+      "runner_version": "optimization-runner/2",
+      "schema_version": "experiment/1",
+      "splits_hash": "3e5dfbcb30be0be5dd3d1db5902ee27cbb28d791ef19bdf64f84712cf2cc00ce",
+      "suite_hash": "183234d4ae82d02485153940c41d8c2e083c5a0db27203249a3c9616a743807b",
+      "task_contract_hash": "18d4a33811e1cf756371e7e6e1b4ab6b72c6e54c88a7adce72b8b6933aed1580",
+      "task_id": "order-desk"
+     }
+    },
+    "memory": {
+     "prior_loading_model_calls": 0,
+     "runs": [
+      {
+       "mode": "cold",
+       "prior_id": null,
+       "prior_kind": null,
+       "reason": "cold_baseline",
+       "seed": 0,
+       "state_hash": null,
+       "strategy": "fixed"
+      },
+      {
+       "mode": "cold",
+       "prior_id": null,
+       "prior_kind": null,
+       "reason": "cold_baseline",
+       "seed": 0,
+       "state_hash": null,
+       "strategy": "random"
+      },
+      {
+       "mode": "cold",
+       "prior_id": null,
+       "prior_kind": null,
+       "reason": "cold_baseline",
+       "seed": 0,
+       "state_hash": null,
+       "strategy": "aco"
+      }
+     ],
+     "schema": "wynk-memory-start/1"
+    },
+    "model_hashes": [
+     "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8"
+    ],
+    "provenance": {
+     "dataset_id": "order-desk",
+     "dataset_version": 1,
+     "splits_hash": "3e5dfbcb30be0be5dd3d1db5902ee27cbb28d791ef19bdf64f84712cf2cc00ce",
+     "upload_id": "u-f23996688e87e11f6f65002ebe8c1e18"
+    },
+    "run_versions": [
+     {
+      "benchmark_hash": "inline",
+      "compiler_version": "maf/compiler/1",
+      "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+      "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+      "prompt_template_version": "mvp-3"
+     }
+    ],
+    "runs": [
+     {
+      "budget": {
+       "max_candidate_evaluations": 4,
+       "max_cost": null,
+       "max_model_calls": null,
+       "max_tokens": null,
+       "max_wall_time_s": null
+      },
+      "candidates": [
+       {
+        "evaluation": 1,
+        "genome": {
+         "schema": "genome/1",
+         "stages": [
+          {
+           "kind": "DIRECT",
+           "method": "answer"
+          }
+         ]
+        },
+        "genome_hash": "081bf16800a19bff91f4dec9443fc5f8b3f92eec0f7e1182d216aaa40aec741e",
+        "optimization": {
+         "completion_tokens": 96,
+         "fitness_mean": 0.0,
+         "genome_lcb": 0.0,
+         "latency_s": {
+          "max": 0.054497799999808194,
+          "mean": 0.011119608332895345,
+          "n": 12,
+          "p50": 0.0038865499991516117,
+          "p95": 0.054497799999808194
+         },
+         "model_calls": 12,
+         "pass_rate": 0.0,
+         "prompt_tokens": 480,
+         "runs": 12,
+         "score_mean": 0.0,
+         "tokens": 576,
+         "tokens_per_example": 48.0
+        },
+        "repeat": false,
+        "round": 0,
+        "run_versions": {
+         "benchmark_hash": "inline",
+         "compiler_version": "maf/compiler/1",
+         "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+         "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+         "prompt_template_version": "mvp-3"
+        },
+        "runs": [
+         {
+          "attempt": 0,
+          "completion_tokens": 8,
+          "cost": 5.6e-05,
+          "failure": null,
+          "fitness": 0.0,
+          "model_calls": 1,
+          "prediction": {
+           "answer": "unknown"
+          },
+          "prompt_tokens": 40,
+          "retries": 0,
+          "row_id": "T-0001",
+          "score": 0.0,
+          "split": "optimization",
+          "timing": {
+           "call_s": 0.2938596999993024,
+           "evaluator_s": 0.00042940000275848433,
+           "workflow_s": 0.2763113000000885
+          },
+          "tokens": 48,
+          "tool_calls": 0,
+          "trial": 0,
+          "verdict": "FAIL",
+          "wall_time_s": 0.054497799999808194
+         },
+         {
+          "attempt": 0,
+          "completion_tokens": 8,
+          "cost": 5.6e-05,
+          "failure": null,
+          "fitness": 0.0,
+          "model_calls": 1,
+          "prediction": {
+           "answer": "unknown"
+          },
+          "prompt_tokens": 40,
+          "retries": 0,
+          "row_id": "T-0002",
+          "score": 0.0,
+          "split": "optimization",
+          "timing": {
+           "call_s": 0.026261699997121468,
+           "evaluator_s": 0.0006797999994887505,
+           "workflow_s": 0.009264899999834597
+          },
+          "tokens": 48,
+          "tool_calls": 0,
+          "trial": 0,
+          "verdict": "FAIL",
+          "wall_time_s": 0.004021799999463838
+         },
+         {
+          "attempt": 0,
+          "completion_tokens": 8,
+          "cost": 5.6e-05,
+          "failure": null,
+          "fitness": 0.0,
+          "model_calls": 1,
+          "prediction": {
+           "answer": "unknown"
+          },
+          "prompt_tokens": 40,
+          "retries": 0,
+          "row_id": "T-0003",
+          "score": 0.0,
+          "split": "optimization",
+          "timing": {
+           "call_s": 0.04258119999940391,
+           "evaluator_s": 0.00045929999760119244,
+           "workflow_s": 0.009454800001549302
+          },
+          "tokens": 48,
+          "tool_calls": 0,
+          "trial": 0,
+          "verdict": "FAIL",
+          "wall_time_s": 0.00410570000167354
+         }
+        ],
+        "selection": {
+         "feasible": true,
+         "rank_key": [
+          1.0,
+          0.0
+         ],
+         "violations": []
+        },
+        "timing": {
+         "e2e_s": 0.8390975999973307,
+         "evaluator_s": 0.009138399997027591
+        },
+        "usage": {
+         "completion_tokens": 120,
+         "cost": 0.00084,
+         "execution_s": 0.17712119999123388,
+         "model_calls": 15,
+         "prompt_tokens": 600,
+         "tokens": 720,
+         "workflow_runs": 15
+        },
+        "validation": {
+         "completion_tokens": 24,
+         "fitness_mean": 0.0,
+         "latency_s": {
+          "max": 0.021505199998500757,
+          "mean": 0.014561966665496584,
+          "n": 3,
+          "p50": 0.018522999998822343,
+          "p95": 0.021505199998500757
+         },
+         "model_calls": 3,
+         "pass_rate": 0.0,
+         "prompt_tokens": 120,
+         "runs": 3,
+         "score_mean": 0.0,
+         "tokens": 144,
+         "tokens_per_example": 48.0
+        }
+       }
+      ],
+      "champion": {
+       "feasible": true,
+       "first_evaluation": 1,
+       "genome": {
+        "schema": "genome/1",
+        "stages": [
+         {
+          "kind": "DIRECT",
+          "method": "answer"
+         }
+        ]
+       },
+       "genome_hash": "081bf16800a19bff91f4dec9443fc5f8b3f92eec0f7e1182d216aaa40aec741e",
+       "rank_key": [
+        1.0,
+        0.0
+       ],
+       "validation": {
+        "fitness_mean": 0.0,
+        "pass_rate": 0.0,
+        "runs": 3,
+        "score_mean": 0.0
+       },
+       "violations": []
+      },
+      "curve": [
+       {
+        "best_so_far_genome_hash": "081bf16800a19bff91f4dec9443fc5f8b3f92eec0f7e1182d216aaa40aec741e",
+        "best_so_far_pass_rate": 0.0,
+        "best_so_far_score": 0.0,
+        "cumulative_completion_tokens": 120,
+        "cumulative_cost": 0.00084,
+        "cumulative_e2e_wall_s": 0.8760140000013052,
+        "cumulative_execution_s": 0.17712119999123388,
+        "cumulative_model_calls": 15,
+        "cumulative_prompt_tokens": 600,
+        "cumulative_tokens": 720,
+        "evaluation": 1,
+        "genome_hash": "081bf16800a19bff91f4dec9443fc5f8b3f92eec0f7e1182d216aaa40aec741e",
+        "max_score_so_far": 0.0,
+        "optimization_score": 0.0,
+        "score": 0.0,
+        "validation_pass_rate": 0.0
+       }
+      ],
+      "distinct_genomes": 1,
+      "efficiency": {
+       "cost_per_candidate": 0.00084,
+       "tokens_per_candidate": 720.0,
+       "tokens_per_example": 48.0
+      },
+      "evaluated_genome_hashes": [
+       "081bf16800a19bff91f4dec9443fc5f8b3f92eec0f7e1182d216aaa40aec741e"
+      ],
+      "identity": {
+       "budget_hash": "3e156ddc9858a36d4fd5d83a20f7d452bdb676e203d9c65f33b36d19a2825f3d",
+       "optimizer": "fixed_baseline",
+       "optimizer_version": "fixed_shortest/1",
+       "problem_id": "c72ebffb292b002da591984d6bf84ef2c56a580f61884586edbae74ba2ba589d",
+       "protocol": {
+        "batch_size": 2,
+        "budget": {
+         "max_candidate_evaluations": 4,
+         "max_cost": null,
+         "max_model_calls": null,
+         "max_tokens": null,
+         "max_wall_time_s": null
+        },
+        "lcb_z": 1.0,
+        "trials": 1
+       },
+       "run_id": "f94621017dee0b05de239001cd6aea9444e6001dd237ecc38efc8bde5a73ffbc",
+       "seed": 0,
+       "strategy": "fixed"
+      },
+      "latency_s": {
+       "max": 0.054497799999808194,
+       "mean": 0.011808079999415593,
+       "n": 15,
+       "p50": 0.0039051999992807396,
+       "p95": 0.054497799999808194
+      },
+      "model_hashes": [
+       "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8"
+      ],
+      "optimizer": "fixed_baseline",
+      "optimizer_version": "fixed_shortest/1",
+      "reservation_per_run": {
+       "cost": null,
+       "model_calls": null,
+       "tokens": null,
+       "wall_time_s": null
+      },
+      "rounds": 1,
+      "run_id": "f94621017dee0b05de239001cd6aea9444e6001dd237ecc38efc8bde5a73ffbc",
+      "run_versions": [
+       {
+        "benchmark_hash": "inline",
+        "compiler_version": "maf/compiler/1",
+        "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+        "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+        "prompt_template_version": "mvp-3"
+       }
+      ],
+      "seed": 0,
+      "split_usage": {
+       "optimization_runs": 12,
+       "test_runs": 0,
+       "validation_runs": 3
+      },
+      "stop_reason": "strategy_exhausted",
+      "strategy": "fixed",
+      "task_champions": [
+       {
+        "compared_genomes": 1,
+        "contract_hashes": [
+         "18d4a33811e1cf756371e7e6e1b4ab6b72c6e54c88a7adce72b8b6933aed1580"
+        ],
+        "evidence_sources": [],
+        "feasible": true,
+        "genome": {
+         "schema": "genome/1",
+         "stages": [
+          {
+           "kind": "DIRECT",
+           "method": "answer"
+          }
+         ]
+        },
+        "genome_hash": "081bf16800a19bff91f4dec9443fc5f8b3f92eec0f7e1182d216aaa40aec741e",
+        "rank_key": [
+         1.0,
+         0.0
+        ],
+        "run_ids": [
+         "386201ad18abb63bbab4da6bb454c4dc86faa8494990ea9cb64da7be22e15464"
+        ],
+        "run_paths": [
+         "candidate.1.runs.12"
+        ],
+        "run_versions": [
+         {
+          "benchmark_hash": "inline",
+          "compiler_version": "maf/compiler/1",
+          "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+          "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+          "prompt_template_version": "mvp-3"
+         }
+        ],
+        "task_id": "T-0009",
+        "validation": {
+         "fitness_mean": 0.0,
+         "pass_rate": 0.0,
+         "runs": 1,
+         "score_mean": 0.0
+        },
+        "violations": []
+       },
+       {
+        "compared_genomes": 1,
+        "contract_hashes": [
+         "18d4a33811e1cf756371e7e6e1b4ab6b72c6e54c88a7adce72b8b6933aed1580"
+        ],
+        "evidence_sources": [],
+        "feasible": true,
+        "genome": {
+         "schema": "genome/1",
+         "stages": [
+          {
+           "kind": "DIRECT",
+           "method": "answer"
+          }
+         ]
+        },
+        "genome_hash": "081bf16800a19bff91f4dec9443fc5f8b3f92eec0f7e1182d216aaa40aec741e",
+        "rank_key": [
+         1.0,
+         0.0
+        ],
+        "run_ids": [
+         "be93439db7353f10a54b388a8a364efd645c901dbf607b8104ac10734fb9c264"
+        ],
+        "run_paths": [
+         "candidate.1.runs.13"
+        ],
+        "run_versions": [
+         {
+          "benchmark_hash": "inline",
+          "compiler_version": "maf/compiler/1",
+          "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+          "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+          "prompt_template_version": "mvp-3"
+         }
+        ],
+        "task_id": "T-0015",
+        "validation": {
+         "fitness_mean": 0.0,
+         "pass_rate": 0.0,
+         "runs": 1,
+         "score_mean": 0.0
+        },
+        "violations": []
+       },
+       {
+        "compared_genomes": 1,
+        "contract_hashes": [
+         "18d4a33811e1cf756371e7e6e1b4ab6b72c6e54c88a7adce72b8b6933aed1580"
+        ],
+        "evidence_sources": [],
+        "feasible": true,
+        "genome": {
+         "schema": "genome/1",
+         "stages": [
+          {
+           "kind": "DIRECT",
+           "method": "answer"
+          }
+         ]
+        },
+        "genome_hash": "081bf16800a19bff91f4dec9443fc5f8b3f92eec0f7e1182d216aaa40aec741e",
+        "rank_key": [
+         1.0,
+         0.0
+        ],
+        "run_ids": [
+         "7e4a25f505e787a0aee9634010fc5394e1f23b00394d3b7820306d6f43debab7"
+        ],
+        "run_paths": [
+         "candidate.1.runs.14"
+        ],
+        "run_versions": [
+         {
+          "benchmark_hash": "inline",
+          "compiler_version": "maf/compiler/1",
+          "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+          "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+          "prompt_template_version": "mvp-3"
+         }
+        ],
+        "task_id": "T-0018",
+        "validation": {
+         "fitness_mean": 0.0,
+         "pass_rate": 0.0,
+         "runs": 1,
+         "score_mean": 0.0
+        },
+        "violations": []
+       }
+      ],
+      "timing": {
+       "candidate_e2e_s": {
+        "max": 0.8390975999973307,
+        "mean": 0.8390975999973307,
+        "n": 1,
+        "p50": 0.8390975999973307,
+        "p95": 0.8390975999973307
+       },
+       "candidates_per_min": 67.48829162500817,
+       "e2e_wall_s": 0.8890430999999808,
+       "evaluate_calls_s": 0.8354737999907229,
+       "evaluator_overhead_s": 0.009138399997027591,
+       "examples_per_s": 16.872072906252043,
+       "execution_s": 0.17712119999123388,
+       "optimizer_overhead_s": 0.0016773000024841167,
+       "workers": 1
+      },
+      "usage": {
+       "candidate_evaluations": 1,
+       "completion_tokens": 120,
+       "cost": 0.00084,
+       "model_calls": 15,
+       "prompt_tokens": 600,
+       "retries": 0,
+       "tokens": 720,
+       "tool_calls": 0,
+       "wall_time_s": 0.17712119999123388,
+       "workflow_runs": 15
+      }
+     },
+     {
+      "budget": {
+       "max_candidate_evaluations": 4,
+       "max_cost": null,
+       "max_model_calls": null,
+       "max_tokens": null,
+       "max_wall_time_s": null
+      },
+      "candidates": [
+       {
+        "evaluation": 1,
+        "genome": {
+         "schema": "genome/1",
+         "stages": [
+          {
+           "kind": "GATHER",
+           "mode": "parallel-4",
+           "source": "fetch"
+          },
+          {
+           "kind": "FILTER",
+           "method": "keyword_chunk"
+          },
+          {
+           "kind": "EXTRACT",
+           "method": "schema_guided"
+          }
+         ]
+        },
+        "genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+        "optimization": {
+         "completion_tokens": 192,
+         "fitness_mean": 1.09952,
+         "genome_lcb": 1.09952,
+         "latency_s": {
+          "max": 0.02251360000082059,
+          "mean": 0.008399141667117268,
+          "n": 12,
+          "p50": 0.007104149999577203,
+          "p95": 0.02251360000082059
+         },
+         "model_calls": 24,
+         "pass_rate": 1.0,
+         "prompt_tokens": 960,
+         "runs": 12,
+         "score_mean": 1.0,
+         "tokens": 1152,
+         "tokens_per_example": 96.0
+        },
+        "repeat": false,
+        "round": 0,
+        "run_versions": {
+         "benchmark_hash": "inline",
+         "compiler_version": "maf/compiler/1",
+         "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+         "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+         "prompt_template_version": "mvp-3"
+        },
+        "runs": [
+         {
+          "attempt": 0,
+          "completion_tokens": 16,
+          "cost": 0.000112,
+          "failure": null,
+          "fitness": 1.09952,
+          "model_calls": 2,
+          "prediction": {
+           "answer": "Denver"
+          },
+          "prompt_tokens": 80,
+          "retries": 0,
+          "row_id": "T-0001",
+          "score": 1.0,
+          "split": "optimization",
+          "timing": {
+           "call_s": 0.03821489999972982,
+           "evaluator_s": 0.0005520000013348181,
+           "workflow_s": 0.01870309999867459
+          },
+          "tokens": 96,
+          "tool_calls": 1,
+          "trial": 0,
+          "verdict": "PASS",
+          "wall_time_s": 0.006382700001267949
+         },
+         {
+          "attempt": 0,
+          "completion_tokens": 16,
+          "cost": 0.000112,
+          "failure": null,
+          "fitness": 1.09952,
+          "model_calls": 2,
+          "prediction": {
+           "answer": "Austin"
+          },
+          "prompt_tokens": 80,
+          "retries": 0,
+          "row_id": "T-0002",
+          "score": 1.0,
+          "split": "optimization",
+          "timing": {
+           "call_s": 0.036342199997307034,
+           "evaluator_s": 0.0003853999987768475,
+           "workflow_s": 0.017406800001481315
+          },
+          "tokens": 96,
+          "tool_calls": 1,
+          "trial": 0,
+          "verdict": "PASS",
+          "wall_time_s": 0.007726700001512654
+         },
+         {
+          "attempt": 0,
+          "completion_tokens": 16,
+          "cost": 0.000112,
+          "failure": null,
+          "fitness": 1.09952,
+          "model_calls": 2,
+          "prediction": {
+           "answer": "Portland"
+          },
+          "prompt_tokens": 80,
+          "retries": 0,
+          "row_id": "T-0003",
+          "score": 1.0,
+          "split": "optimization",
+          "timing": {
+           "call_s": 0.03520879999996396,
+           "evaluator_s": 0.0007826999972166959,
+           "workflow_s": 0.01676470000165864
+          },
+          "tokens": 96,
+          "tool_calls": 1,
+          "trial": 0,
+          "verdict": "PASS",
+          "wall_time_s": 0.00617699999929755
+         }
+        ],
+        "selection": {
+         "feasible": true,
+         "rank_key": [
+          1.0,
+          1.0
+         ],
+         "violations": []
+        },
+        "timing": {
+         "e2e_s": 0.5712810999975773,
+         "evaluator_s": 0.008116499993775506
+        },
+        "usage": {
+         "completion_tokens": 240,
+         "cost": 0.00168,
+         "execution_s": 0.12158120001186035,
+         "model_calls": 30,
+         "prompt_tokens": 1200,
+         "tokens": 1440,
+         "workflow_runs": 15
+        },
+        "validation": {
+         "completion_tokens": 48,
+         "fitness_mean": 1.09952,
+         "latency_s": {
+          "max": 0.007524000004195841,
+          "mean": 0.006930500002151045,
+          "n": 3,
+          "p50": 0.007130200003302889,
+          "p95": 0.007524000004195841
+         },
+         "model_calls": 6,
+         "pass_rate": 1.0,
+         "prompt_tokens": 240,
+         "runs": 3,
+         "score_mean": 1.0,
+         "tokens": 288,
+         "tokens_per_example": 96.0
+        }
+       },
+       {
+        "evaluation": 2,
+        "genome": {
+         "schema": "genome/1",
+         "stages": [
+          {
+           "kind": "DIRECT",
+           "method": "answer"
+          },
+          {
+           "kind": "VERIFY",
+           "method": "schema_check",
+           "on_failure": "retry-1"
+          }
+         ]
+        },
+        "genome_hash": "cb2566dff515c9813df7672b27af9844b4c8c7f8333bb8ffdd129c4b385b5995",
+        "optimization": {
+         "completion_tokens": 96,
+         "fitness_mean": 0.0,
+         "genome_lcb": 0.0,
+         "latency_s": {
+          "max": 0.004801200000656536,
+          "mean": 0.00393388333426022,
+          "n": 12,
+          "p50": 0.003820850002739462,
+          "p95": 0.004801200000656536
+         },
+         "model_calls": 12,
+         "pass_rate": 0.0,
+         "prompt_tokens": 480,
+         "runs": 12,
+         "score_mean": 0.0,
+         "tokens": 576,
+         "tokens_per_example": 48.0
+        },
+        "repeat": false,
+        "round": 0,
+        "run_versions": {
+         "benchmark_hash": "inline",
+         "compiler_version": "maf/compiler/1",
+         "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+         "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+         "prompt_template_version": "mvp-3"
+        },
+        "runs": [
+         {
+          "attempt": 0,
+          "completion_tokens": 8,
+          "cost": 5.6e-05,
+          "failure": null,
+          "fitness": 0.0,
+          "model_calls": 1,
+          "prediction": {
+           "answer": "unknown"
+          },
+          "prompt_tokens": 40,
+          "retries": 0,
+          "row_id": "T-0001",
+          "score": 0.0,
+          "split": "optimization",
+          "timing": {
+           "call_s": 0.0313733000002685,
+           "evaluator_s": 0.00038700000004610047,
+           "workflow_s": 0.011069399999541929
+          },
+          "tokens": 48,
+          "tool_calls": 0,
+          "trial": 0,
+          "verdict": "FAIL",
+          "wall_time_s": 0.004579400003422052
+         },
+         {
+          "attempt": 0,
+          "completion_tokens": 8,
+          "cost": 5.6e-05,
+          "failure": null,
+          "fitness": 0.0,
+          "model_calls": 1,
+          "prediction": {
+           "answer": "unknown"
+          },
+          "prompt_tokens": 40,
+          "retries": 0,
+          "row_id": "T-0002",
+          "score": 0.0,
+          "split": "optimization",
+          "timing": {
+           "call_s": 0.03046620000168332,
+           "evaluator_s": 0.0007350000014412217,
+           "workflow_s": 0.011926300001505297
+          },
+          "tokens": 48,
+          "tool_calls": 0,
+          "trial": 0,
+          "verdict": "FAIL",
+          "wall_time_s": 0.003704499999003019
+         },
+         {
+          "attempt": 0,
+          "completion_tokens": 8,
+          "cost": 5.6e-05,
+          "failure": null,
+          "fitness": 0.0,
+          "model_calls": 1,
+          "prediction": {
+           "answer": "unknown"
+          },
+          "prompt_tokens": 40,
+          "retries": 0,
+          "row_id": "T-0003",
+          "score": 0.0,
+          "split": "optimization",
+          "timing": {
+           "call_s": 0.037285200000042096,
+           "evaluator_s": 0.0006257999993977137,
+           "workflow_s": 0.01211219999822788
+          },
+          "tokens": 48,
+          "tool_calls": 0,
+          "trial": 0,
+          "verdict": "FAIL",
+          "wall_time_s": 0.004801200000656536
+         }
+        ],
+        "selection": {
+         "feasible": true,
+         "rank_key": [
+          1.0,
+          0.0
+         ],
+         "violations": []
+        },
+        "timing": {
+         "e2e_s": 0.5855044000018097,
+         "evaluator_s": 0.008344800004124409
+        },
+        "usage": {
+         "completion_tokens": 120,
+         "cost": 0.00084,
+         "execution_s": 0.061154900009569246,
+         "model_calls": 15,
+         "prompt_tokens": 600,
+         "tokens": 720,
+         "workflow_runs": 15
+        },
+        "validation": {
+         "completion_tokens": 24,
+         "fitness_mean": 0.0,
+         "latency_s": {
+          "max": 0.004846499999985099,
+          "mean": 0.0046494333328155335,
+          "n": 3,
+          "p50": 0.0047684999990451615,
+          "p95": 0.004846499999985099
+         },
+         "model_calls": 3,
+         "pass_rate": 0.0,
+         "prompt_tokens": 120,
+         "runs": 3,
+         "score_mean": 0.0,
+         "tokens": 144,
+         "tokens_per_example": 48.0
+        }
+       },
+       {
+        "evaluation": 3,
+        "genome": {
+         "schema": "genome/1",
+         "stages": [
+          {
+           "kind": "DIRECT",
+           "method": "cot"
+          },
+          {
+           "kind": "VERIFY",
+           "method": "schema_check",
+           "on_failure": "retry-1"
+          }
+         ]
+        },
+        "genome_hash": "25c7e0866770bd701df11374bbee97a8846584d6b316b586c4c2a09706b61b27",
+        "optimization": {
+         "completion_tokens": 96,
+         "fitness_mean": 0.0,
+         "genome_lcb": 0.0,
+         "latency_s": {
+          "max": 0.009611800000129733,
+          "mean": 0.004555849999330046,
+          "n": 12,
+          "p50": 0.0038505499996972503,
+          "p95": 0.009611800000129733
+         },
+         "model_calls": 12,
+         "pass_rate": 0.0,
+         "prompt_tokens": 480,
+         "runs": 12,
+         "score_mean": 0.0,
+         "tokens": 576,
+         "tokens_per_example": 48.0
+        },
+        "repeat": false,
+        "round": 1,
+        "run_versions": {
+         "benchmark_hash": "inline",
+         "compiler_version": "maf/compiler/1",
+         "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+         "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+         "prompt_template_version": "mvp-3"
+        },
+        "runs": [
+         {
+          "attempt": 0,
+          "completion_tokens": 8,
+          "cost": 5.6e-05,
+          "failure": null,
+          "fitness": 0.0,
+          "model_calls": 1,
+          "prediction": {
+           "answer": "unknown"
+          },
+          "prompt_tokens": 40,
+          "retries": 0,
+          "row_id": "T-0001",
+          "score": 0.0,
+          "split": "optimization",
+          "timing": {
+           "call_s": 0.049053899998398265,
+           "evaluator_s": 0.0010309999997843988,
+           "workflow_s": 0.024407299999438692
+          },
+          "tokens": 48,
+          "tool_calls": 0,
+          "trial": 0,
+          "verdict": "FAIL",
+          "wall_time_s": 0.009611800000129733
+         },
+         {
+          "attempt": 0,
+          "completion_tokens": 8,
+          "cost": 5.6e-05,
+          "failure": null,
+          "fitness": 0.0,
+          "model_calls": 1,
+          "prediction": {
+           "answer": "unknown"
+          },
+          "prompt_tokens": 40,
+          "retries": 0,
+          "row_id": "T-0002",
+          "score": 0.0,
+          "split": "optimization",
+          "timing": {
+           "call_s": 0.036424000001716195,
+           "evaluator_s": 0.0003894000001309905,
+           "workflow_s": 0.009622699999454198
+          },
+          "tokens": 48,
+          "tool_calls": 0,
+          "trial": 0,
+          "verdict": "FAIL",
+          "wall_time_s": 0.0034993999979633372
+         },
+         {
+          "attempt": 0,
+          "completion_tokens": 8,
+          "cost": 5.6e-05,
+          "failure": null,
+          "fitness": 0.0,
+          "model_calls": 1,
+          "prediction": {
+           "answer": "unknown"
+          },
+          "prompt_tokens": 40,
+          "retries": 0,
+          "row_id": "T-0003",
+          "score": 0.0,
+          "split": "optimization",
+          "timing": {
+           "call_s": 0.031089699998119613,
+           "evaluator_s": 0.000446999998530373,
+           "workflow_s": 0.010816100002557505
+          },
+          "tokens": 48,
+          "tool_calls": 0,
+          "trial": 0,
+          "verdict": "FAIL",
+          "wall_time_s": 0.003701499997987412
+         }
+        ],
+        "selection": {
+         "feasible": true,
+         "rank_key": [
+          1.0,
+          0.0
+         ],
+         "violations": []
+        },
+        "timing": {
+         "e2e_s": 0.5258701999991899,
+         "evaluator_s": 0.008874099999957252
+        },
+        "usage": {
+         "completion_tokens": 120,
+         "cost": 0.00084,
+         "execution_s": 0.08381799999187933,
+         "model_calls": 15,
+         "prompt_tokens": 600,
+         "tokens": 720,
+         "workflow_runs": 15
+        },
+        "validation": {
+         "completion_tokens": 24,
+         "fitness_mean": 0.0,
+         "latency_s": {
+          "max": 0.02171759999691858,
+          "mean": 0.009715933333306262,
+          "n": 3,
+          "p50": 0.004223399999318644,
+          "p95": 0.02171759999691858
+         },
+         "model_calls": 3,
+         "pass_rate": 0.0,
+         "prompt_tokens": 120,
+         "runs": 3,
+         "score_mean": 0.0,
+         "tokens": 144,
+         "tokens_per_example": 48.0
+        }
+       }
+      ],
+      "champion": {
+       "feasible": true,
+       "first_evaluation": 1,
+       "genome": {
+        "schema": "genome/1",
+        "stages": [
+         {
+          "kind": "GATHER",
+          "mode": "parallel-4",
+          "source": "fetch"
+         },
+         {
+          "kind": "FILTER",
+          "method": "keyword_chunk"
+         },
+         {
+          "kind": "EXTRACT",
+          "method": "schema_guided"
+         }
+        ]
+       },
+       "genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+       "rank_key": [
+        1.0,
+        1.0
+       ],
+       "validation": {
+        "fitness_mean": 1.09952,
+        "pass_rate": 1.0,
+        "runs": 3,
+        "score_mean": 1.0
+       },
+       "violations": []
+      },
+      "curve": [
+       {
+        "best_so_far_genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+        "best_so_far_pass_rate": 1.0,
+        "best_so_far_score": 1.0,
+        "cumulative_completion_tokens": 240,
+        "cumulative_cost": 0.00168,
+        "cumulative_e2e_wall_s": 0.6002617999984068,
+        "cumulative_execution_s": 0.12158120001186035,
+        "cumulative_model_calls": 30,
+        "cumulative_prompt_tokens": 1200,
+        "cumulative_tokens": 1440,
+        "evaluation": 1,
+        "genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+        "max_score_so_far": 1.0,
+        "optimization_score": 1.0,
+        "score": 1.0,
+        "validation_pass_rate": 1.0
+       },
+       {
+        "best_so_far_genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+        "best_so_far_pass_rate": 1.0,
+        "best_so_far_score": 1.0,
+        "cumulative_completion_tokens": 360,
+        "cumulative_cost": 0.00252,
+        "cumulative_e2e_wall_s": 1.2058617000002414,
+        "cumulative_execution_s": 0.1827361000214296,
+        "cumulative_model_calls": 45,
+        "cumulative_prompt_tokens": 1800,
+        "cumulative_tokens": 2160,
+        "evaluation": 2,
+        "genome_hash": "cb2566dff515c9813df7672b27af9844b4c8c7f8333bb8ffdd129c4b385b5995",
+        "max_score_so_far": 1.0,
+        "optimization_score": 0.0,
+        "score": 0.0,
+        "validation_pass_rate": 0.0
+       },
+       {
+        "best_so_far_genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+        "best_so_far_pass_rate": 1.0,
+        "best_so_far_score": 1.0,
+        "cumulative_completion_tokens": 480,
+        "cumulative_cost": 0.00336,
+        "cumulative_e2e_wall_s": 1.864567900000111,
+        "cumulative_execution_s": 0.2665541000133089,
+        "cumulative_model_calls": 60,
+        "cumulative_prompt_tokens": 2400,
+        "cumulative_tokens": 2880,
+        "evaluation": 3,
+        "genome_hash": "25c7e0866770bd701df11374bbee97a8846584d6b316b586c4c2a09706b61b27",
+        "max_score_so_far": 1.0,
+        "optimization_score": 0.0,
+        "score": 0.0,
+        "validation_pass_rate": 0.0
+       }
+      ],
+      "distinct_genomes": 4,
+      "efficiency": {
+       "cost_per_candidate": 0.0010500000000000002,
+       "tokens_per_candidate": 900.0,
+       "tokens_per_example": 60.0
+      },
+      "evaluated_genome_hashes": [
+       "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+       "cb2566dff515c9813df7672b27af9844b4c8c7f8333bb8ffdd129c4b385b5995",
+       "25c7e0866770bd701df11374bbee97a8846584d6b316b586c4c2a09706b61b27"
+      ],
+      "identity": {
+       "budget_hash": "3e156ddc9858a36d4fd5d83a20f7d452bdb676e203d9c65f33b36d19a2825f3d",
+       "optimizer": "random_search_distinct",
+       "optimizer_version": "random_distinct/1",
+       "problem_id": "c72ebffb292b002da591984d6bf84ef2c56a580f61884586edbae74ba2ba589d",
+       "protocol": {
+        "batch_size": 2,
+        "budget": {
+         "max_candidate_evaluations": 4,
+         "max_cost": null,
+         "max_model_calls": null,
+         "max_tokens": null,
+         "max_wall_time_s": null
+        },
+        "lcb_z": 1.0,
+        "trials": 1
+       },
+       "run_id": "e704ae12b14ee9c20e10440b79054eeb26f5f2353c2229fa3a460aabbdf92dc0",
+       "seed": 0,
+       "strategy": "random"
+      },
+      "latency_s": {
+       "max": 0.02685120000023744,
+       "mean": 0.005978915000256772,
+       "n": 60,
+       "p50": 0.004113250000955304,
+       "p95": 0.01761120000082883
+      },
+      "model_hashes": [
+       "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8"
+      ],
+      "optimizer": "random_search_distinct",
+      "optimizer_version": "random_distinct/1",
+      "reservation_per_run": {
+       "cost": null,
+       "model_calls": null,
+       "tokens": null,
+       "wall_time_s": null
+      },
+      "rounds": 2,
+      "run_id": "e704ae12b14ee9c20e10440b79054eeb26f5f2353c2229fa3a460aabbdf92dc0",
+      "run_versions": [
+       {
+        "benchmark_hash": "inline",
+        "compiler_version": "maf/compiler/1",
+        "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+        "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+        "prompt_template_version": "mvp-3"
+       }
+      ],
+      "seed": 0,
+      "split_usage": {
+       "optimization_runs": 48,
+       "test_runs": 0,
+       "validation_runs": 12
+      },
+      "stop_reason": "candidate_evaluations",
+      "strategy": "random",
+      "task_champions": [
+       {
+        "compared_genomes": 4,
+        "contract_hashes": [
+         "18d4a33811e1cf756371e7e6e1b4ab6b72c6e54c88a7adce72b8b6933aed1580"
+        ],
+        "evidence_sources": [],
+        "feasible": true,
+        "genome": {
+         "schema": "genome/1",
+         "stages": [
+          {
+           "kind": "GATHER",
+           "mode": "parallel-4",
+           "source": "fetch"
+          },
+          {
+           "kind": "FILTER",
+           "method": "keyword_chunk"
+          },
+          {
+           "kind": "EXTRACT",
+           "method": "schema_guided"
+          }
+         ]
+        },
+        "genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+        "rank_key": [
+         1.0,
+         1.0
+        ],
+        "run_ids": [
+         "527ce771dfd053c28b3c911ff89312a5bb2460e650a9078d132368ef8f50e510"
+        ],
+        "run_paths": [
+         "candidate.1.runs.12"
+        ],
+        "run_versions": [
+         {
+          "benchmark_hash": "inline",
+          "compiler_version": "maf/compiler/1",
+          "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+          "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+          "prompt_template_version": "mvp-3"
+         }
+        ],
+        "task_id": "T-0009",
+        "validation": {
+         "fitness_mean": 1.09952,
+         "pass_rate": 1.0,
+         "runs": 1,
+         "score_mean": 1.0
+        },
+        "violations": []
+       },
+       {
+        "compared_genomes": 4,
+        "contract_hashes": [
+         "18d4a33811e1cf756371e7e6e1b4ab6b72c6e54c88a7adce72b8b6933aed1580"
+        ],
+        "evidence_sources": [],
+        "feasible": true,
+        "genome": {
+         "schema": "genome/1",
+         "stages": [
+          {
+           "kind": "GATHER",
+           "mode": "parallel-4",
+           "source": "fetch"
+          },
+          {
+           "kind": "FILTER",
+           "method": "keyword_chunk"
+          },
+          {
+           "kind": "EXTRACT",
+           "method": "schema_guided"
+          }
+         ]
+        },
+        "genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+        "rank_key": [
+         1.0,
+         1.0
+        ],
+        "run_ids": [
+         "b8a1e04e41bfaac96c6869f665c3ea140d842f6e447d589923cae55a93b4744c"
+        ],
+        "run_paths": [
+         "candidate.1.runs.13"
+        ],
+        "run_versions": [
+         {
+          "benchmark_hash": "inline",
+          "compiler_version": "maf/compiler/1",
+          "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+          "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+          "prompt_template_version": "mvp-3"
+         }
+        ],
+        "task_id": "T-0015",
+        "validation": {
+         "fitness_mean": 1.09952,
+         "pass_rate": 1.0,
+         "runs": 1,
+         "score_mean": 1.0
+        },
+        "violations": []
+       },
+       {
+        "compared_genomes": 4,
+        "contract_hashes": [
+         "18d4a33811e1cf756371e7e6e1b4ab6b72c6e54c88a7adce72b8b6933aed1580"
+        ],
+        "evidence_sources": [],
+        "feasible": true,
+        "genome": {
+         "schema": "genome/1",
+         "stages": [
+          {
+           "kind": "GATHER",
+           "mode": "parallel-4",
+           "source": "fetch"
+          },
+          {
+           "kind": "FILTER",
+           "method": "keyword_chunk"
+          },
+          {
+           "kind": "EXTRACT",
+           "method": "schema_guided"
+          }
+         ]
+        },
+        "genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+        "rank_key": [
+         1.0,
+         1.0
+        ],
+        "run_ids": [
+         "c9e6d22e477c84815df7a2b5a5f8f9a7c017a8226bc9847a7f354515997b8fde"
+        ],
+        "run_paths": [
+         "candidate.1.runs.14"
+        ],
+        "run_versions": [
+         {
+          "benchmark_hash": "inline",
+          "compiler_version": "maf/compiler/1",
+          "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+          "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+          "prompt_template_version": "mvp-3"
+         }
+        ],
+        "task_id": "T-0018",
+        "validation": {
+         "fitness_mean": 1.09952,
+         "pass_rate": 1.0,
+         "runs": 1,
+         "score_mean": 1.0
+        },
+        "violations": []
+       }
+      ],
+      "timing": {
+       "candidate_e2e_s": {
+        "max": 0.5855044000018097,
+        "mean": 0.5439349250000305,
+        "n": 4,
+        "p50": 0.5485756499983836,
+        "p95": 0.5855044000018097
+       },
+       "candidates_per_min": 99.73689821824264,
+       "e2e_wall_s": 2.406331099999079,
+       "evaluate_calls_s": 2.156634100017982,
+       "evaluator_overhead_s": 0.03651989999343641,
+       "examples_per_s": 24.93422455456066,
+       "execution_s": 0.3587349000154063,
+       "optimizer_overhead_s": 0.018840099997760262,
+       "workers": 1
+      },
+      "usage": {
+       "candidate_evaluations": 4,
+       "completion_tokens": 600,
+       "cost": 0.004200000000000001,
+       "model_calls": 75,
+       "prompt_tokens": 3000,
+       "retries": 0,
+       "tokens": 3600,
+       "tool_calls": 15,
+       "wall_time_s": 0.3587349000154063,
+       "workflow_runs": 60
+      }
+     },
+     {
+      "budget": {
+       "max_candidate_evaluations": 4,
+       "max_cost": null,
+       "max_model_calls": null,
+       "max_tokens": null,
+       "max_wall_time_s": null
+      },
+      "candidates": [
+       {
+        "evaluation": 1,
+        "genome": {
+         "schema": "genome/1",
+         "stages": [
+          {
+           "kind": "GATHER",
+           "mode": "parallel-4",
+           "source": "fetch"
+          },
+          {
+           "kind": "FILTER",
+           "method": "keyword_chunk"
+          },
+          {
+           "kind": "EXTRACT",
+           "method": "cot"
+          }
+         ]
+        },
+        "genome_hash": "a0441b5f4f9553ae2b2f3daa916934ac7ffc1a7b77daa8c215c7b29224eeea44",
+        "optimization": {
+         "completion_tokens": 288,
+         "fitness_mean": 1.09928,
+         "genome_lcb": 1.09928,
+         "latency_s": {
+          "max": 0.14387519999945653,
+          "mean": 0.023369824999463162,
+          "n": 12,
+          "p50": 0.01107640000009269,
+          "p95": 0.14387519999945653
+         },
+         "model_calls": 36,
+         "pass_rate": 1.0,
+         "prompt_tokens": 1440,
+         "runs": 12,
+         "score_mean": 1.0,
+         "tokens": 1728,
+         "tokens_per_example": 144.0
+        },
+        "repeat": false,
+        "round": 0,
+        "run_versions": {
+         "benchmark_hash": "inline",
+         "compiler_version": "maf/compiler/1",
+         "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+         "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+         "prompt_template_version": "mvp-3"
+        },
+        "runs": [
+         {
+          "attempt": 0,
+          "completion_tokens": 24,
+          "cost": 0.000168,
+          "failure": null,
+          "fitness": 1.09928,
+          "model_calls": 3,
+          "prediction": {
+           "answer": "Denver"
+          },
+          "prompt_tokens": 120,
+          "retries": 0,
+          "row_id": "T-0001",
+          "score": 1.0,
+          "split": "optimization",
+          "timing": {
+           "call_s": 0.04284489999918151,
+           "evaluator_s": 0.00048489999971934594,
+           "workflow_s": 0.024333199999091448
+          },
+          "tokens": 144,
+          "tool_calls": 1,
+          "trial": 0,
+          "verdict": "PASS",
+          "wall_time_s": 0.010987899997417117
+         },
+         {
+          "attempt": 0,
+          "completion_tokens": 24,
+          "cost": 0.000168,
+          "failure": null,
+          "fitness": 1.09928,
+          "model_calls": 3,
+          "prediction": {
+           "answer": "Austin"
+          },
+          "prompt_tokens": 120,
+          "retries": 0,
+          "row_id": "T-0002",
+          "score": 1.0,
+          "split": "optimization",
+          "timing": {
+           "call_s": 0.18079669999860926,
+           "evaluator_s": 0.0008703000021341722,
+           "workflow_s": 0.16152779999902123
+          },
+          "tokens": 144,
+          "tool_calls": 1,
+          "trial": 0,
+          "verdict": "PASS",
+          "wall_time_s": 0.14387519999945653
+         },
+         {
+          "attempt": 0,
+          "completion_tokens": 24,
+          "cost": 0.000168,
+          "failure": null,
+          "fitness": 1.09928,
+          "model_calls": 3,
+          "prediction": {
+           "answer": "Portland"
+          },
+          "prompt_tokens": 120,
+          "retries": 0,
+          "row_id": "T-0003",
+          "score": 1.0,
+          "split": "optimization",
+          "timing": {
+           "call_s": 0.04039499999998952,
+           "evaluator_s": 0.0005132000005687587,
+           "workflow_s": 0.025965400000131922
+          },
+          "tokens": 144,
+          "tool_calls": 1,
+          "trial": 0,
+          "verdict": "PASS",
+          "wall_time_s": 0.01209519999974873
+         }
+        ],
+        "selection": {
+         "feasible": true,
+         "rank_key": [
+          1.0,
+          1.0
+         ],
+         "violations": []
+        },
+        "timing": {
+         "e2e_s": 0.7941707000027236,
+         "evaluator_s": 0.007626500002515968
+        },
+        "usage": {
+         "completion_tokens": 360,
+         "cost": 0.0025199999999999997,
+         "execution_s": 0.31159879998813267,
+         "model_calls": 45,
+         "prompt_tokens": 1800,
+         "tokens": 2160,
+         "workflow_runs": 15
+        },
+        "validation": {
+         "completion_tokens": 72,
+         "fitness_mean": 1.09928,
+         "latency_s": {
+          "max": 0.011852600000565872,
+          "mean": 0.01038696666485824,
+          "n": 3,
+          "p50": 0.009906999996019294,
+          "p95": 0.011852600000565872
+         },
+         "model_calls": 9,
+         "pass_rate": 1.0,
+         "prompt_tokens": 360,
+         "runs": 3,
+         "score_mean": 1.0,
+         "tokens": 432,
+         "tokens_per_example": 144.0
+        }
+       },
+       {
+        "evaluation": 2,
+        "genome": {
+         "schema": "genome/1",
+         "stages": [
+          {
+           "kind": "GATHER",
+           "mode": "parallel-4",
+           "source": "fetch"
+          },
+          {
+           "kind": "EXTRACT",
+           "method": "schema_guided"
+          },
+          {
+           "kind": "SYNTHESIZE",
+           "method": "cite_evidence"
+          }
+         ]
+        },
+        "genome_hash": "786286f8507dc126fe9a55861750e146f04e9455384b5a8f66eb79a5bc40c57b",
+        "optimization": {
+         "completion_tokens": 192,
+         "fitness_mean": 1.09952,
+         "genome_lcb": 1.09952,
+         "latency_s": {
+          "max": 0.027669100007187808,
+          "mean": 0.009320000001935114,
+          "n": 12,
+          "p50": 0.0075539999997999985,
+          "p95": 0.027669100007187808
+         },
+         "model_calls": 24,
+         "pass_rate": 1.0,
+         "prompt_tokens": 960,
+         "runs": 12,
+         "score_mean": 1.0,
+         "tokens": 1152,
+         "tokens_per_example": 96.0
+        },
+        "repeat": false,
+        "round": 0,
+        "run_versions": {
+         "benchmark_hash": "inline",
+         "compiler_version": "maf/compiler/1",
+         "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+         "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+         "prompt_template_version": "mvp-3"
+        },
+        "runs": [
+         {
+          "attempt": 0,
+          "completion_tokens": 16,
+          "cost": 0.000112,
+          "failure": null,
+          "fitness": 1.09952,
+          "model_calls": 2,
+          "prediction": {
+           "answer": "Denver"
+          },
+          "prompt_tokens": 80,
+          "retries": 0,
+          "row_id": "T-0001",
+          "score": 1.0,
+          "split": "optimization",
+          "timing": {
+           "call_s": 0.03923899999790592,
+           "evaluator_s": 0.0004255999992892612,
+           "workflow_s": 0.017724400000588503
+          },
+          "tokens": 96,
+          "tool_calls": 1,
+          "trial": 0,
+          "verdict": "PASS",
+          "wall_time_s": 0.0070382999983849
+         },
+         {
+          "attempt": 0,
+          "completion_tokens": 16,
+          "cost": 0.000112,
+          "failure": null,
+          "fitness": 1.09952,
+          "model_calls": 2,
+          "prediction": {
+           "answer": "Austin"
+          },
+          "prompt_tokens": 80,
+          "retries": 0,
+          "row_id": "T-0002",
+          "score": 1.0,
+          "split": "optimization",
+          "timing": {
+           "call_s": 0.03406360000008135,
+           "evaluator_s": 0.0005103000003146008,
+           "workflow_s": 0.01608929999929387
+          },
+          "tokens": 96,
+          "tool_calls": 1,
+          "trial": 0,
+          "verdict": "PASS",
+          "wall_time_s": 0.006513500004075468
+         },
+         {
+          "attempt": 0,
+          "completion_tokens": 16,
+          "cost": 0.000112,
+          "failure": null,
+          "fitness": 1.09952,
+          "model_calls": 2,
+          "prediction": {
+           "answer": "Portland"
+          },
+          "prompt_tokens": 80,
+          "retries": 0,
+          "row_id": "T-0003",
+          "score": 1.0,
+          "split": "optimization",
+          "timing": {
+           "call_s": 0.05427570000028936,
+           "evaluator_s": 0.00048579999929643236,
+           "workflow_s": 0.019333000000187894
+          },
+          "tokens": 96,
+          "tool_calls": 1,
+          "trial": 0,
+          "verdict": "PASS",
+          "wall_time_s": 0.010201799999776995
+         }
+        ],
+        "selection": {
+         "feasible": true,
+         "rank_key": [
+          1.0,
+          1.0
+         ],
+         "violations": []
+        },
+        "timing": {
+         "e2e_s": 0.6972965999993903,
+         "evaluator_s": 0.00839599999744678
+        },
+        "usage": {
+         "completion_tokens": 240,
+         "cost": 0.00168,
+         "execution_s": 0.13255790002222057,
+         "model_calls": 30,
+         "prompt_tokens": 1200,
+         "tokens": 1440,
+         "workflow_runs": 15
+        },
+        "validation": {
+         "completion_tokens": 48,
+         "fitness_mean": 1.09952,
+         "latency_s": {
+          "max": 0.008605300001363503,
+          "mean": 0.006905966666333067,
+          "n": 3,
+          "p50": 0.006061699994461378,
+          "p95": 0.008605300001363503
+         },
+         "model_calls": 6,
+         "pass_rate": 1.0,
+         "prompt_tokens": 240,
+         "runs": 3,
+         "score_mean": 1.0,
+         "tokens": 288,
+         "tokens_per_example": 96.0
+        }
+       },
+       {
+        "evaluation": 3,
+        "genome": {
+         "schema": "genome/1",
+         "stages": [
+          {
+           "kind": "DIRECT",
+           "method": "cot"
+          },
+          {
+           "kind": "VERIFY",
+           "method": "schema_check",
+           "on_failure": "retry-2"
+          }
+         ]
+        },
+        "genome_hash": "cf06d58fff88342a626ba4924f89f497cc79518f71365f5b7a50e44fefc7d1aa",
+        "optimization": {
+         "completion_tokens": 96,
+         "fitness_mean": 0.0,
+         "genome_lcb": 0.0,
+         "latency_s": {
+          "max": 0.019835200004308717,
+          "mean": 0.005175033332913396,
+          "n": 12,
+          "p50": 0.003835699999399367,
+          "p95": 0.019835200004308717
+         },
+         "model_calls": 12,
+         "pass_rate": 0.0,
+         "prompt_tokens": 480,
+         "runs": 12,
+         "score_mean": 0.0,
+         "tokens": 576,
+         "tokens_per_example": 48.0
+        },
+        "repeat": false,
+        "round": 1,
+        "run_versions": {
+         "benchmark_hash": "inline",
+         "compiler_version": "maf/compiler/1",
+         "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+         "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+         "prompt_template_version": "mvp-3"
+        },
+        "runs": [
+         {
+          "attempt": 0,
+          "completion_tokens": 8,
+          "cost": 5.6e-05,
+          "failure": null,
+          "fitness": 0.0,
+          "model_calls": 1,
+          "prediction": {
+           "answer": "unknown"
+          },
+          "prompt_tokens": 40,
+          "retries": 0,
+          "row_id": "T-0001",
+          "score": 0.0,
+          "split": "optimization",
+          "timing": {
+           "call_s": 0.03172929999709595,
+           "evaluator_s": 0.00046799999836366624,
+           "workflow_s": 0.011617899999691872
+          },
+          "tokens": 48,
+          "tool_calls": 0,
+          "trial": 0,
+          "verdict": "FAIL",
+          "wall_time_s": 0.003974299997935304
+         },
+         {
+          "attempt": 0,
+          "completion_tokens": 8,
+          "cost": 5.6e-05,
+          "failure": null,
+          "fitness": 0.0,
+          "model_calls": 1,
+          "prediction": {
+           "answer": "unknown"
+          },
+          "prompt_tokens": 40,
+          "retries": 0,
+          "row_id": "T-0002",
+          "score": 0.0,
+          "split": "optimization",
+          "timing": {
+           "call_s": 0.030611800000770018,
+           "evaluator_s": 0.0004992000031052157,
+           "workflow_s": 0.011194799997610971
+          },
+          "tokens": 48,
+          "tool_calls": 0,
+          "trial": 0,
+          "verdict": "FAIL",
+          "wall_time_s": 0.004658100002416177
+         },
+         {
+          "attempt": 0,
+          "completion_tokens": 8,
+          "cost": 5.6e-05,
+          "failure": null,
+          "fitness": 0.0,
+          "model_calls": 1,
+          "prediction": {
+           "answer": "unknown"
+          },
+          "prompt_tokens": 40,
+          "retries": 0,
+          "row_id": "T-0003",
+          "score": 0.0,
+          "split": "optimization",
+          "timing": {
+           "call_s": 0.030389399998966837,
+           "evaluator_s": 0.00047199999971780926,
+           "workflow_s": 0.011520800002472242
+          },
+          "tokens": 48,
+          "tool_calls": 0,
+          "trial": 0,
+          "verdict": "FAIL",
+          "wall_time_s": 0.0034012000032817014
+         }
+        ],
+        "selection": {
+         "feasible": true,
+         "rank_key": [
+          1.0,
+          0.0
+         ],
+         "violations": []
+        },
+        "timing": {
+         "e2e_s": 0.5093923000022187,
+         "evaluator_s": 0.009053600006154738
+        },
+        "usage": {
+         "completion_tokens": 120,
+         "cost": 0.00084,
+         "execution_s": 0.07382069999584928,
+         "model_calls": 15,
+         "prompt_tokens": 600,
+         "tokens": 720,
+         "workflow_runs": 15
+        },
+        "validation": {
+         "completion_tokens": 24,
+         "fitness_mean": 0.0,
+         "latency_s": {
+          "max": 0.0041784999993979,
+          "mean": 0.0039067666669628425,
+          "n": 3,
+          "p50": 0.003842800000711577,
+          "p95": 0.0041784999993979
+         },
+         "model_calls": 3,
+         "pass_rate": 0.0,
+         "prompt_tokens": 120,
+         "runs": 3,
+         "score_mean": 0.0,
+         "tokens": 144,
+         "tokens_per_example": 48.0
+        }
+       }
+      ],
+      "champion": {
+       "feasible": true,
+       "first_evaluation": 1,
+       "genome": {
+        "schema": "genome/1",
+        "stages": [
+         {
+          "kind": "GATHER",
+          "mode": "parallel-4",
+          "source": "fetch"
+         },
+         {
+          "kind": "FILTER",
+          "method": "keyword_chunk"
+         },
+         {
+          "kind": "EXTRACT",
+          "method": "cot"
+         }
+        ]
+       },
+       "genome_hash": "a0441b5f4f9553ae2b2f3daa916934ac7ffc1a7b77daa8c215c7b29224eeea44",
+       "rank_key": [
+        1.0,
+        1.0
+       ],
+       "validation": {
+        "fitness_mean": 1.09928,
+        "pass_rate": 1.0,
+        "runs": 3,
+        "score_mean": 1.0
+       },
+       "violations": []
+      },
+      "curve": [
+       {
+        "best_so_far_genome_hash": "a0441b5f4f9553ae2b2f3daa916934ac7ffc1a7b77daa8c215c7b29224eeea44",
+        "best_so_far_pass_rate": 1.0,
+        "best_so_far_score": 1.0,
+        "cumulative_completion_tokens": 360,
+        "cumulative_cost": 0.0025199999999999997,
+        "cumulative_e2e_wall_s": 0.82700130000012,
+        "cumulative_execution_s": 0.31159879998813267,
+        "cumulative_model_calls": 45,
+        "cumulative_prompt_tokens": 1800,
+        "cumulative_tokens": 2160,
+        "evaluation": 1,
+        "genome_hash": "a0441b5f4f9553ae2b2f3daa916934ac7ffc1a7b77daa8c215c7b29224eeea44",
+        "max_score_so_far": 1.0,
+        "optimization_score": 1.0,
+        "score": 1.0,
+        "validation_pass_rate": 1.0
+       },
+       {
+        "best_so_far_genome_hash": "a0441b5f4f9553ae2b2f3daa916934ac7ffc1a7b77daa8c215c7b29224eeea44",
+        "best_so_far_pass_rate": 1.0,
+        "best_so_far_score": 1.0,
+        "cumulative_completion_tokens": 600,
+        "cumulative_cost": 0.0042,
+        "cumulative_e2e_wall_s": 1.5429989999975078,
+        "cumulative_execution_s": 0.44415670001035323,
+        "cumulative_model_calls": 75,
+        "cumulative_prompt_tokens": 3000,
+        "cumulative_tokens": 3600,
+        "evaluation": 2,
+        "genome_hash": "786286f8507dc126fe9a55861750e146f04e9455384b5a8f66eb79a5bc40c57b",
+        "max_score_so_far": 1.0,
+        "optimization_score": 1.0,
+        "score": 1.0,
+        "validation_pass_rate": 1.0
+       },
+       {
+        "best_so_far_genome_hash": "a0441b5f4f9553ae2b2f3daa916934ac7ffc1a7b77daa8c215c7b29224eeea44",
+        "best_so_far_pass_rate": 1.0,
+        "best_so_far_score": 1.0,
+        "cumulative_completion_tokens": 720,
+        "cumulative_cost": 0.005039999999999999,
+        "cumulative_e2e_wall_s": 2.1507893999987573,
+        "cumulative_execution_s": 0.5179774000062025,
+        "cumulative_model_calls": 90,
+        "cumulative_prompt_tokens": 3600,
+        "cumulative_tokens": 4320,
+        "evaluation": 3,
+        "genome_hash": "cf06d58fff88342a626ba4924f89f497cc79518f71365f5b7a50e44fefc7d1aa",
+        "max_score_so_far": 1.0,
+        "optimization_score": 0.0,
+        "score": 0.0,
+        "validation_pass_rate": 0.0
+       }
+      ],
+      "distinct_genomes": 4,
+      "efficiency": {
+       "cost_per_candidate": 0.00147,
+       "tokens_per_candidate": 1260.0,
+       "tokens_per_example": 84.0
+      },
+      "evaluated_genome_hashes": [
+       "a0441b5f4f9553ae2b2f3daa916934ac7ffc1a7b77daa8c215c7b29224eeea44",
+       "786286f8507dc126fe9a55861750e146f04e9455384b5a8f66eb79a5bc40c57b",
+       "cf06d58fff88342a626ba4924f89f497cc79518f71365f5b7a50e44fefc7d1aa"
+      ],
+      "identity": {
+       "budget_hash": "3e156ddc9858a36d4fd5d83a20f7d452bdb676e203d9c65f33b36d19a2825f3d",
+       "optimizer": "aco_mmas",
+       "optimizer_version": "aco_mmas/1",
+       "problem_id": "c72ebffb292b002da591984d6bf84ef2c56a580f61884586edbae74ba2ba589d",
+       "protocol": {
+        "batch_size": 2,
+        "budget": {
+         "max_candidate_evaluations": 4,
+         "max_cost": null,
+         "max_model_calls": null,
+         "max_tokens": null,
+         "max_wall_time_s": null
+        },
+        "lcb_z": 1.0,
+        "trials": 1
+       },
+       "run_id": "515fec6c02a79d1da5c3c703319076cb954f3e2ec3aba3aff509da8dd528f0e2",
+       "seed": 0,
+       "strategy": "aco"
+      },
+      "latency_s": {
+       "max": 0.14387519999945653,
+       "mean": 0.010124613333573507,
+       "n": 60,
+       "p50": 0.006368900001689326,
+       "p95": 0.01993860000584391
+      },
+      "model_hashes": [
+       "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8"
+      ],
+      "optimizer": "aco_mmas",
+      "optimizer_version": "aco_mmas/1",
+      "reservation_per_run": {
+       "cost": null,
+       "model_calls": null,
+       "tokens": null,
+       "wall_time_s": null
+      },
+      "rounds": 2,
+      "run_id": "515fec6c02a79d1da5c3c703319076cb954f3e2ec3aba3aff509da8dd528f0e2",
+      "run_versions": [
+       {
+        "benchmark_hash": "inline",
+        "compiler_version": "maf/compiler/1",
+        "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+        "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+        "prompt_template_version": "mvp-3"
+       }
+      ],
+      "seed": 0,
+      "split_usage": {
+       "optimization_runs": 48,
+       "test_runs": 0,
+       "validation_runs": 12
+      },
+      "stop_reason": "candidate_evaluations",
+      "strategy": "aco",
+      "task_champions": [
+       {
+        "compared_genomes": 4,
+        "contract_hashes": [
+         "18d4a33811e1cf756371e7e6e1b4ab6b72c6e54c88a7adce72b8b6933aed1580"
+        ],
+        "evidence_sources": [],
+        "feasible": true,
+        "genome": {
+         "schema": "genome/1",
+         "stages": [
+          {
+           "kind": "GATHER",
+           "mode": "parallel-4",
+           "source": "fetch"
+          },
+          {
+           "kind": "EXTRACT",
+           "method": "schema_guided"
+          },
+          {
+           "kind": "SYNTHESIZE",
+           "method": "cite_evidence"
+          }
+         ]
+        },
+        "genome_hash": "786286f8507dc126fe9a55861750e146f04e9455384b5a8f66eb79a5bc40c57b",
+        "rank_key": [
+         1.0,
+         1.0
+        ],
+        "run_ids": [
+         "0262cf50329bd55eb409bdfcaac920eda1c8b28240300de95f955d1c596790e2"
+        ],
+        "run_paths": [
+         "candidate.2.runs.12"
+        ],
+        "run_versions": [
+         {
+          "benchmark_hash": "inline",
+          "compiler_version": "maf/compiler/1",
+          "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+          "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+          "prompt_template_version": "mvp-3"
+         }
+        ],
+        "task_id": "T-0009",
+        "validation": {
+         "fitness_mean": 1.09952,
+         "pass_rate": 1.0,
+         "runs": 1,
+         "score_mean": 1.0
+        },
+        "violations": []
+       },
+       {
+        "compared_genomes": 4,
+        "contract_hashes": [
+         "18d4a33811e1cf756371e7e6e1b4ab6b72c6e54c88a7adce72b8b6933aed1580"
+        ],
+        "evidence_sources": [],
+        "feasible": true,
+        "genome": {
+         "schema": "genome/1",
+         "stages": [
+          {
+           "kind": "GATHER",
+           "mode": "parallel-4",
+           "source": "fetch"
+          },
+          {
+           "kind": "EXTRACT",
+           "method": "schema_guided"
+          },
+          {
+           "kind": "SYNTHESIZE",
+           "method": "cite_evidence"
+          }
+         ]
+        },
+        "genome_hash": "786286f8507dc126fe9a55861750e146f04e9455384b5a8f66eb79a5bc40c57b",
+        "rank_key": [
+         1.0,
+         1.0
+        ],
+        "run_ids": [
+         "19834d370a120be63ae09856d93f05da155f06a17fec0d3b43bee163482b73d1"
+        ],
+        "run_paths": [
+         "candidate.2.runs.13"
+        ],
+        "run_versions": [
+         {
+          "benchmark_hash": "inline",
+          "compiler_version": "maf/compiler/1",
+          "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+          "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+          "prompt_template_version": "mvp-3"
+         }
+        ],
+        "task_id": "T-0015",
+        "validation": {
+         "fitness_mean": 1.09952,
+         "pass_rate": 1.0,
+         "runs": 1,
+         "score_mean": 1.0
+        },
+        "violations": []
+       },
+       {
+        "compared_genomes": 4,
+        "contract_hashes": [
+         "18d4a33811e1cf756371e7e6e1b4ab6b72c6e54c88a7adce72b8b6933aed1580"
+        ],
+        "evidence_sources": [],
+        "feasible": true,
+        "genome": {
+         "schema": "genome/1",
+         "stages": [
+          {
+           "kind": "GATHER",
+           "mode": "parallel-4",
+           "source": "fetch"
+          },
+          {
+           "kind": "EXTRACT",
+           "method": "schema_guided"
+          },
+          {
+           "kind": "SYNTHESIZE",
+           "method": "cite_evidence"
+          }
+         ]
+        },
+        "genome_hash": "786286f8507dc126fe9a55861750e146f04e9455384b5a8f66eb79a5bc40c57b",
+        "rank_key": [
+         1.0,
+         1.0
+        ],
+        "run_ids": [
+         "3ecffb5b1e40322156b652a1a599a04afa763309c7ccd325df24ff9258351142"
+        ],
+        "run_paths": [
+         "candidate.2.runs.14"
+        ],
+        "run_versions": [
+         {
+          "benchmark_hash": "inline",
+          "compiler_version": "maf/compiler/1",
+          "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+          "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+          "prompt_template_version": "mvp-3"
+         }
+        ],
+        "task_id": "T-0018",
+        "validation": {
+         "fitness_mean": 1.09952,
+         "pass_rate": 1.0,
+         "runs": 1,
+         "score_mean": 1.0
+        },
+        "violations": []
+       }
+      ],
+      "timing": {
+       "candidate_e2e_s": {
+        "max": 0.7941707000027236,
+        "mean": 0.6622794250006336,
+        "n": 4,
+        "p50": 0.6727773499987961,
+        "p95": 0.7941707000027236
+       },
+       "candidates_per_min": 84.46681641930428,
+       "e2e_wall_s": 2.84135249999963,
+       "evaluate_calls_s": 2.6273128999928304,
+       "evaluator_overhead_s": 0.03248480000911513,
+       "examples_per_s": 21.11670410482607,
+       "execution_s": 0.6074768000144104,
+       "optimizer_overhead_s": 0.021185999998124316,
+       "workers": 1
+      },
+      "usage": {
+       "candidate_evaluations": 4,
+       "completion_tokens": 840,
+       "cost": 0.00588,
+       "model_calls": 105,
+       "prompt_tokens": 4200,
+       "retries": 0,
+       "tokens": 5040,
+       "tool_calls": 30,
+       "wall_time_s": 0.6074768000144104,
+       "workflow_runs": 60
+      }
+     }
+    ],
+    "schema": "wynk-optimization-experiment/2",
+    "splits": {
+     "optimization": 12,
+     "test": 3,
+     "validation": 3
+    },
+    "summary": {
+     "by_strategy": {
+      "aco": {
+       "best_so_far_curve": [
+        {
+         "best_so_far_score": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "n": 1,
+          "std": null
+         },
+         "evaluation": 1
+        },
+        {
+         "best_so_far_score": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "n": 1,
+          "std": null
+         },
+         "evaluation": 2
+        },
+        {
+         "best_so_far_score": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "n": 1,
+          "std": null
+         },
+         "evaluation": 3
+        }
+       ],
+       "feasible_champions": 1,
+       "metrics": {
+        "candidate_evaluations": {
+         "max": 4,
+         "mean": 4.0,
+         "median": 4,
+         "min": 4,
+         "n": 1,
+         "std": null
+        },
+        "candidates_per_min": {
+         "max": 84.46681641930428,
+         "mean": 84.46681641930428,
+         "median": 84.46681641930428,
+         "min": 84.46681641930428,
+         "n": 1,
+         "std": null
+        },
+        "champion_validation_pass_rate": {
+         "max": 1.0,
+         "mean": 1.0,
+         "median": 1.0,
+         "min": 1.0,
+         "n": 1,
+         "std": null
+        },
+        "champion_validation_score": {
+         "max": 1.0,
+         "mean": 1.0,
+         "median": 1.0,
+         "min": 1.0,
+         "n": 1,
+         "std": null
+        },
+        "completion_tokens": {
+         "max": 840,
+         "mean": 840.0,
+         "median": 840,
+         "min": 840,
+         "n": 1,
+         "std": null
+        },
+        "cost": {
+         "max": 0.00588,
+         "mean": 0.00588,
+         "median": 0.00588,
+         "min": 0.00588,
+         "n": 1,
+         "std": null
+        },
+        "e2e_wall_s": {
+         "max": 2.84135249999963,
+         "mean": 2.84135249999963,
+         "median": 2.84135249999963,
+         "min": 2.84135249999963,
+         "n": 1,
+         "std": null
+        },
+        "evaluator_overhead_s": {
+         "max": 0.03248480000911513,
+         "mean": 0.03248480000911513,
+         "median": 0.03248480000911513,
+         "min": 0.03248480000911513,
+         "n": 1,
+         "std": null
+        },
+        "examples_per_s": {
+         "max": 21.11670410482607,
+         "mean": 21.11670410482607,
+         "median": 21.11670410482607,
+         "min": 21.11670410482607,
+         "n": 1,
+         "std": null
+        },
+        "execution_s": {
+         "max": 0.6074768000144104,
+         "mean": 0.6074768000144104,
+         "median": 0.6074768000144104,
+         "min": 0.6074768000144104,
+         "n": 1,
+         "std": null
+        },
+        "max_latency_s": {
+         "max": 0.14387519999945653,
+         "mean": 0.14387519999945653,
+         "median": 0.14387519999945653,
+         "min": 0.14387519999945653,
+         "n": 1,
+         "std": null
+        },
+        "mean_candidate_e2e_s": {
+         "max": 0.6622794250006336,
+         "mean": 0.6622794250006336,
+         "median": 0.6622794250006336,
+         "min": 0.6622794250006336,
+         "n": 1,
+         "std": null
+        },
+        "mean_latency_s": {
+         "max": 0.010124613333573507,
+         "mean": 0.010124613333573507,
+         "median": 0.010124613333573507,
+         "min": 0.010124613333573507,
+         "n": 1,
+         "std": null
+        },
+        "model_calls": {
+         "max": 105,
+         "mean": 105.0,
+         "median": 105,
+         "min": 105,
+         "n": 1,
+         "std": null
+        },
+        "optimizer_overhead_s": {
+         "max": 0.021185999998124316,
+         "mean": 0.021185999998124316,
+         "median": 0.021185999998124316,
+         "min": 0.021185999998124316,
+         "n": 1,
+         "std": null
+        },
+        "p50_latency_s": {
+         "max": 0.006368900001689326,
+         "mean": 0.006368900001689326,
+         "median": 0.006368900001689326,
+         "min": 0.006368900001689326,
+         "n": 1,
+         "std": null
+        },
+        "p95_latency_s": {
+         "max": 0.01993860000584391,
+         "mean": 0.01993860000584391,
+         "median": 0.01993860000584391,
+         "min": 0.01993860000584391,
+         "n": 1,
+         "std": null
+        },
+        "prompt_tokens": {
+         "max": 4200,
+         "mean": 4200.0,
+         "median": 4200,
+         "min": 4200,
+         "n": 1,
+         "std": null
+        },
+        "tokens": {
+         "max": 5040,
+         "mean": 5040.0,
+         "median": 5040,
+         "min": 5040,
+         "n": 1,
+         "std": null
+        },
+        "tokens_per_candidate": {
+         "max": 1260.0,
+         "mean": 1260.0,
+         "median": 1260.0,
+         "min": 1260.0,
+         "n": 1,
+         "std": null
+        },
+        "tokens_per_example": {
+         "max": 84.0,
+         "mean": 84.0,
+         "median": 84.0,
+         "min": 84.0,
+         "n": 1,
+         "std": null
+        }
+       },
+       "per_seed": [
+        {
+         "candidate_evaluations": 4,
+         "candidates_per_min": 84.46681641930428,
+         "champion_feasible": true,
+         "champion_genome_hash": "a0441b5f4f9553ae2b2f3daa916934ac7ffc1a7b77daa8c215c7b29224eeea44",
+         "champion_validation_pass_rate": 1.0,
+         "champion_validation_score": 1.0,
+         "completion_tokens": 840,
+         "cost": 0.00588,
+         "e2e_wall_s": 2.84135249999963,
+         "evaluator_overhead_s": 0.03248480000911513,
+         "examples_per_s": 21.11670410482607,
+         "execution_s": 0.6074768000144104,
+         "max_latency_s": 0.14387519999945653,
+         "mean_candidate_e2e_s": 0.6622794250006336,
+         "mean_latency_s": 0.010124613333573507,
+         "model_calls": 105,
+         "optimizer_overhead_s": 0.021185999998124316,
+         "p50_latency_s": 0.006368900001689326,
+         "p95_latency_s": 0.01993860000584391,
+         "prompt_tokens": 4200,
+         "run_id": "515fec6c02a79d1da5c3c703319076cb954f3e2ec3aba3aff509da8dd528f0e2",
+         "seed": 0,
+         "stop_reason": "candidate_evaluations",
+         "tokens": 5040,
+         "tokens_per_candidate": 1260.0,
+         "tokens_per_example": 84.0
+        }
+       ],
+       "seeds": [
+        0
+       ]
+      },
+      "fixed": {
+       "best_so_far_curve": [
+        {
+         "best_so_far_score": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "n": 1,
+          "std": null
+         },
+         "evaluation": 1
+        }
+       ],
+       "feasible_champions": 1,
+       "metrics": {
+        "candidate_evaluations": {
+         "max": 1,
+         "mean": 1.0,
+         "median": 1,
+         "min": 1,
+         "n": 1,
+         "std": null
+        },
+        "candidates_per_min": {
+         "max": 67.48829162500817,
+         "mean": 67.48829162500817,
+         "median": 67.48829162500817,
+         "min": 67.48829162500817,
+         "n": 1,
+         "std": null
+        },
+        "champion_validation_pass_rate": {
+         "max": 0.0,
+         "mean": 0.0,
+         "median": 0.0,
+         "min": 0.0,
+         "n": 1,
+         "std": null
+        },
+        "champion_validation_score": {
+         "max": 0.0,
+         "mean": 0.0,
+         "median": 0.0,
+         "min": 0.0,
+         "n": 1,
+         "std": null
+        },
+        "completion_tokens": {
+         "max": 120,
+         "mean": 120.0,
+         "median": 120,
+         "min": 120,
+         "n": 1,
+         "std": null
+        },
+        "cost": {
+         "max": 0.00084,
+         "mean": 0.00084,
+         "median": 0.00084,
+         "min": 0.00084,
+         "n": 1,
+         "std": null
+        },
+        "e2e_wall_s": {
+         "max": 0.8890430999999808,
+         "mean": 0.8890430999999808,
+         "median": 0.8890430999999808,
+         "min": 0.8890430999999808,
+         "n": 1,
+         "std": null
+        },
+        "evaluator_overhead_s": {
+         "max": 0.009138399997027591,
+         "mean": 0.009138399997027591,
+         "median": 0.009138399997027591,
+         "min": 0.009138399997027591,
+         "n": 1,
+         "std": null
+        },
+        "examples_per_s": {
+         "max": 16.872072906252043,
+         "mean": 16.872072906252043,
+         "median": 16.872072906252043,
+         "min": 16.872072906252043,
+         "n": 1,
+         "std": null
+        },
+        "execution_s": {
+         "max": 0.17712119999123388,
+         "mean": 0.17712119999123388,
+         "median": 0.17712119999123388,
+         "min": 0.17712119999123388,
+         "n": 1,
+         "std": null
+        },
+        "max_latency_s": {
+         "max": 0.054497799999808194,
+         "mean": 0.054497799999808194,
+         "median": 0.054497799999808194,
+         "min": 0.054497799999808194,
+         "n": 1,
+         "std": null
+        },
+        "mean_candidate_e2e_s": {
+         "max": 0.8390975999973307,
+         "mean": 0.8390975999973307,
+         "median": 0.8390975999973307,
+         "min": 0.8390975999973307,
+         "n": 1,
+         "std": null
+        },
+        "mean_latency_s": {
+         "max": 0.011808079999415593,
+         "mean": 0.011808079999415593,
+         "median": 0.011808079999415593,
+         "min": 0.011808079999415593,
+         "n": 1,
+         "std": null
+        },
+        "model_calls": {
+         "max": 15,
+         "mean": 15.0,
+         "median": 15,
+         "min": 15,
+         "n": 1,
+         "std": null
+        },
+        "optimizer_overhead_s": {
+         "max": 0.0016773000024841167,
+         "mean": 0.0016773000024841167,
+         "median": 0.0016773000024841167,
+         "min": 0.0016773000024841167,
+         "n": 1,
+         "std": null
+        },
+        "p50_latency_s": {
+         "max": 0.0039051999992807396,
+         "mean": 0.0039051999992807396,
+         "median": 0.0039051999992807396,
+         "min": 0.0039051999992807396,
+         "n": 1,
+         "std": null
+        },
+        "p95_latency_s": {
+         "max": 0.054497799999808194,
+         "mean": 0.054497799999808194,
+         "median": 0.054497799999808194,
+         "min": 0.054497799999808194,
+         "n": 1,
+         "std": null
+        },
+        "prompt_tokens": {
+         "max": 600,
+         "mean": 600.0,
+         "median": 600,
+         "min": 600,
+         "n": 1,
+         "std": null
+        },
+        "tokens": {
+         "max": 720,
+         "mean": 720.0,
+         "median": 720,
+         "min": 720,
+         "n": 1,
+         "std": null
+        },
+        "tokens_per_candidate": {
+         "max": 720.0,
+         "mean": 720.0,
+         "median": 720.0,
+         "min": 720.0,
+         "n": 1,
+         "std": null
+        },
+        "tokens_per_example": {
+         "max": 48.0,
+         "mean": 48.0,
+         "median": 48.0,
+         "min": 48.0,
+         "n": 1,
+         "std": null
+        }
+       },
+       "per_seed": [
+        {
+         "candidate_evaluations": 1,
+         "candidates_per_min": 67.48829162500817,
+         "champion_feasible": true,
+         "champion_genome_hash": "081bf16800a19bff91f4dec9443fc5f8b3f92eec0f7e1182d216aaa40aec741e",
+         "champion_validation_pass_rate": 0.0,
+         "champion_validation_score": 0.0,
+         "completion_tokens": 120,
+         "cost": 0.00084,
+         "e2e_wall_s": 0.8890430999999808,
+         "evaluator_overhead_s": 0.009138399997027591,
+         "examples_per_s": 16.872072906252043,
+         "execution_s": 0.17712119999123388,
+         "max_latency_s": 0.054497799999808194,
+         "mean_candidate_e2e_s": 0.8390975999973307,
+         "mean_latency_s": 0.011808079999415593,
+         "model_calls": 15,
+         "optimizer_overhead_s": 0.0016773000024841167,
+         "p50_latency_s": 0.0039051999992807396,
+         "p95_latency_s": 0.054497799999808194,
+         "prompt_tokens": 600,
+         "run_id": "f94621017dee0b05de239001cd6aea9444e6001dd237ecc38efc8bde5a73ffbc",
+         "seed": 0,
+         "stop_reason": "strategy_exhausted",
+         "tokens": 720,
+         "tokens_per_candidate": 720.0,
+         "tokens_per_example": 48.0
+        }
+       ],
+       "seeds": [
+        0
+       ]
+      },
+      "random": {
+       "best_so_far_curve": [
+        {
+         "best_so_far_score": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "n": 1,
+          "std": null
+         },
+         "evaluation": 1
+        },
+        {
+         "best_so_far_score": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "n": 1,
+          "std": null
+         },
+         "evaluation": 2
+        },
+        {
+         "best_so_far_score": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "n": 1,
+          "std": null
+         },
+         "evaluation": 3
+        }
+       ],
+       "feasible_champions": 1,
+       "metrics": {
+        "candidate_evaluations": {
+         "max": 4,
+         "mean": 4.0,
+         "median": 4,
+         "min": 4,
+         "n": 1,
+         "std": null
+        },
+        "candidates_per_min": {
+         "max": 99.73689821824264,
+         "mean": 99.73689821824264,
+         "median": 99.73689821824264,
+         "min": 99.73689821824264,
+         "n": 1,
+         "std": null
+        },
+        "champion_validation_pass_rate": {
+         "max": 1.0,
+         "mean": 1.0,
+         "median": 1.0,
+         "min": 1.0,
+         "n": 1,
+         "std": null
+        },
+        "champion_validation_score": {
+         "max": 1.0,
+         "mean": 1.0,
+         "median": 1.0,
+         "min": 1.0,
+         "n": 1,
+         "std": null
+        },
+        "completion_tokens": {
+         "max": 600,
+         "mean": 600.0,
+         "median": 600,
+         "min": 600,
+         "n": 1,
+         "std": null
+        },
+        "cost": {
+         "max": 0.004200000000000001,
+         "mean": 0.004200000000000001,
+         "median": 0.004200000000000001,
+         "min": 0.004200000000000001,
+         "n": 1,
+         "std": null
+        },
+        "e2e_wall_s": {
+         "max": 2.406331099999079,
+         "mean": 2.406331099999079,
+         "median": 2.406331099999079,
+         "min": 2.406331099999079,
+         "n": 1,
+         "std": null
+        },
+        "evaluator_overhead_s": {
+         "max": 0.03651989999343641,
+         "mean": 0.03651989999343641,
+         "median": 0.03651989999343641,
+         "min": 0.03651989999343641,
+         "n": 1,
+         "std": null
+        },
+        "examples_per_s": {
+         "max": 24.93422455456066,
+         "mean": 24.93422455456066,
+         "median": 24.93422455456066,
+         "min": 24.93422455456066,
+         "n": 1,
+         "std": null
+        },
+        "execution_s": {
+         "max": 0.3587349000154063,
+         "mean": 0.3587349000154063,
+         "median": 0.3587349000154063,
+         "min": 0.3587349000154063,
+         "n": 1,
+         "std": null
+        },
+        "max_latency_s": {
+         "max": 0.02685120000023744,
+         "mean": 0.02685120000023744,
+         "median": 0.02685120000023744,
+         "min": 0.02685120000023744,
+         "n": 1,
+         "std": null
+        },
+        "mean_candidate_e2e_s": {
+         "max": 0.5439349250000305,
+         "mean": 0.5439349250000305,
+         "median": 0.5439349250000305,
+         "min": 0.5439349250000305,
+         "n": 1,
+         "std": null
+        },
+        "mean_latency_s": {
+         "max": 0.005978915000256772,
+         "mean": 0.005978915000256772,
+         "median": 0.005978915000256772,
+         "min": 0.005978915000256772,
+         "n": 1,
+         "std": null
+        },
+        "model_calls": {
+         "max": 75,
+         "mean": 75.0,
+         "median": 75,
+         "min": 75,
+         "n": 1,
+         "std": null
+        },
+        "optimizer_overhead_s": {
+         "max": 0.018840099997760262,
+         "mean": 0.018840099997760262,
+         "median": 0.018840099997760262,
+         "min": 0.018840099997760262,
+         "n": 1,
+         "std": null
+        },
+        "p50_latency_s": {
+         "max": 0.004113250000955304,
+         "mean": 0.004113250000955304,
+         "median": 0.004113250000955304,
+         "min": 0.004113250000955304,
+         "n": 1,
+         "std": null
+        },
+        "p95_latency_s": {
+         "max": 0.01761120000082883,
+         "mean": 0.01761120000082883,
+         "median": 0.01761120000082883,
+         "min": 0.01761120000082883,
+         "n": 1,
+         "std": null
+        },
+        "prompt_tokens": {
+         "max": 3000,
+         "mean": 3000.0,
+         "median": 3000,
+         "min": 3000,
+         "n": 1,
+         "std": null
+        },
+        "tokens": {
+         "max": 3600,
+         "mean": 3600.0,
+         "median": 3600,
+         "min": 3600,
+         "n": 1,
+         "std": null
+        },
+        "tokens_per_candidate": {
+         "max": 900.0,
+         "mean": 900.0,
+         "median": 900.0,
+         "min": 900.0,
+         "n": 1,
+         "std": null
+        },
+        "tokens_per_example": {
+         "max": 60.0,
+         "mean": 60.0,
+         "median": 60.0,
+         "min": 60.0,
+         "n": 1,
+         "std": null
+        }
+       },
+       "per_seed": [
+        {
+         "candidate_evaluations": 4,
+         "candidates_per_min": 99.73689821824264,
+         "champion_feasible": true,
+         "champion_genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+         "champion_validation_pass_rate": 1.0,
+         "champion_validation_score": 1.0,
+         "completion_tokens": 600,
+         "cost": 0.004200000000000001,
+         "e2e_wall_s": 2.406331099999079,
+         "evaluator_overhead_s": 0.03651989999343641,
+         "examples_per_s": 24.93422455456066,
+         "execution_s": 0.3587349000154063,
+         "max_latency_s": 0.02685120000023744,
+         "mean_candidate_e2e_s": 0.5439349250000305,
+         "mean_latency_s": 0.005978915000256772,
+         "model_calls": 75,
+         "optimizer_overhead_s": 0.018840099997760262,
+         "p50_latency_s": 0.004113250000955304,
+         "p95_latency_s": 0.01761120000082883,
+         "prompt_tokens": 3000,
+         "run_id": "e704ae12b14ee9c20e10440b79054eeb26f5f2353c2229fa3a460aabbdf92dc0",
+         "seed": 0,
+         "stop_reason": "candidate_evaluations",
+         "tokens": 3600,
+         "tokens_per_candidate": 900.0,
+         "tokens_per_example": 60.0
+        }
+       ],
+       "seeds": [
+        0
+       ]
+      }
+     },
+     "highest_mean_champion_validation_score": [
+      "aco",
+      "random"
+     ]
+    },
+    "synthetic": false,
+    "test_runs": 0
+   },
+   "artifact_schema": "wynk-experiment-artifact/1",
+   "artifact_id": "15ef598bafe40fee1bad5c977b9e3f4b31768cc9cf9cc5616dfeac3e250983ae",
+   "provenance_id": "54b2de4a369b0be9d567c8f353ed06c6c5c5ecd0a164db419193e5ecb74e8917",
+   "experiment_sha256": "4fe6d09169b9d930fa8b01ea3bbc41de1018f1eadef48408995f83cac53de566"
+  }
+ },
+ "get_provenance": {
+  "status": 200,
+  "body": {
+   "job_id": "j-91c5aea377ff472989a60593",
+   "artifact_id": "15ef598bafe40fee1bad5c977b9e3f4b31768cc9cf9cc5616dfeac3e250983ae",
+   "provenance_id": "54b2de4a369b0be9d567c8f353ed06c6c5c5ecd0a164db419193e5ecb74e8917",
+   "experiment_sha256": "4fe6d09169b9d930fa8b01ea3bbc41de1018f1eadef48408995f83cac53de566",
+   "promotion_id": null,
+   "provenance": {
+    "budget": {
+     "batch_size": 2,
+     "budget": {
+      "max_candidate_evaluations": 4,
+      "max_cost": null,
+      "max_model_calls": null,
+      "max_tokens": null,
+      "max_wall_time_s": null
+     },
+     "budget_hash": "3e156ddc9858a36d4fd5d83a20f7d452bdb676e203d9c65f33b36d19a2825f3d",
+     "fixed_baseline_rule": "fixed_shortest/1",
+     "pricing": "registry-pricing/1:619e22171af775eafecc4c785ebdcba7073221721eb80aa6434122ea63dabc23",
+     "protocol": {
+      "batch_size": 2,
+      "budget": {
+       "max_candidate_evaluations": 4,
+       "max_cost": null,
+       "max_model_calls": null,
+       "max_tokens": null,
+       "max_wall_time_s": null
+      },
+      "lcb_z": 1.0,
+      "trials": 1
+     },
+     "protocol_hash": "fac930cf44d2ce5b7b3bb16fda4b4abb1441317dff8a1316ee7887000f507a92",
+     "protocol_id": null,
+     "trials": 1
+    },
+    "contract": {
+     "constraints_hash": "b65cb4de4f37515136acd1909f0b1623f9a7724aec7a8a7b9c9af12ed4e8cec5",
+     "contract": {
+      "constraints": {
+       "maximum_cost_per_example": null,
+       "maximum_mean_latency_s": null,
+       "maximum_model_calls": 4,
+       "maximum_p95_latency_s": null,
+       "maximum_retries": 2,
+       "maximum_tokens_per_example": 20000,
+       "maximum_tool_calls": 20,
+       "maximum_wall_time_s": 120.0,
+       "maximum_workflow_steps": null,
+       "minimum_quality": null
+      },
+      "contract_version": 1,
+      "dataset": {
+       "columns": [
+        {
+         "name": "ticket_id",
+         "nullable": false,
+         "type": "string"
+        },
+        {
+         "name": "question",
+         "nullable": false,
+         "type": "string"
+        },
+        {
+         "name": "order_record",
+         "nullable": false,
+         "type": "string"
+        }
+       ],
+       "content_hash": "5da878fdf441c82dd76e2863ae9855fc5580f140718dfd74eb1f75800a11a9df",
+       "context_columns": [
+        "order_record"
+       ],
+       "dataset_id": "order-desk",
+       "dataset_version": 1,
+       "format": "csv",
+       "id_column": "ticket_id",
+       "input_columns": [
+        "question"
+       ],
+       "metadata": {
+        "row_ids": "column"
+       },
+       "name": "Order desk",
+       "row_count": 18,
+       "schema_version": "datasetspec/1",
+       "target_columns": [
+        "answer"
+       ]
+      },
+      "evaluation": {
+       "config": {
+        "case_sensitive": false,
+        "normalize_whitespace": false
+       },
+       "evaluator": "exact_match",
+       "evaluator_version": "exact_match/1",
+       "schema_version": "evaluationspec/1"
+      },
+      "input_schema": {
+       "fields": [
+        {
+         "name": "question",
+         "required": true,
+         "type": "string"
+        },
+        {
+         "name": "order_record",
+         "required": true,
+         "type": "string"
+        }
+       ]
+      },
+      "instructions": "Name the destination city of the order, using only the order record.",
+      "objective": {
+       "mode": "maximize_quality",
+       "scales": {},
+       "schema_version": "objectivespec/1",
+       "weights": {}
+      },
+      "output_schema": {
+       "fields": [
+        {
+         "name": "answer",
+         "required": true,
+         "type": "string"
+        }
+       ]
+      },
+      "schema_version": "taskcontract/1",
+      "task_id": "order-desk",
+      "task_type": "question_answering",
+      "workflow": {
+       "allowed_sources": [
+        "fetch"
+       ],
+       "interaction_required": false,
+       "stages": [
+        "GATHER",
+        "FILTER",
+        "EXTRACT"
+       ]
+      }
+     },
+     "contract_hash": "18d4a33811e1cf756371e7e6e1b4ab6b72c6e54c88a7adce72b8b6933aed1580",
+     "contract_version": 1,
+     "objective_hash": "10d136caeadfbef5c46feb334f5c82299f3e8aaf539125e22f4ffbd0090a7045",
+     "schema_version": "taskcontract/1",
+     "task_id": "order-desk"
+    },
+    "dataset": {
+     "content_hash": "5da878fdf441c82dd76e2863ae9855fc5580f140718dfd74eb1f75800a11a9df",
+     "dataset_id": "order-desk",
+     "dataset_version": 1,
+     "identity_hash": "51232785a966db51530dcfd60eec8ab281d0b1524f8759cc0744f9368089247a",
+     "manifest_hash": null
+    },
+    "definition_hash": "e6b90742842d6674cdfde6db98a11cd692d60961c7765eba029af0232dbe0fc4",
+    "evaluator": {
+     "config": {
+      "case_sensitive": false,
+      "normalize_whitespace": false
+     },
+     "kind": "exact_match",
+     "run_version": "exact_match/1+fitness/mvp-2",
+     "spec_hash": "88964a3cf9224e3c8a28a590339c9df8011d2586b1206c4799eb077230c5e171",
+     "spec_version": "exact_match/1"
+    },
+    "experiment_id": "4b2faad550fffe39bf57b782a71b66ebe86e8a620d633773c5f8189c4e02fa90",
+    "grammar": {
+     "grammar_hash": "0f3281942b8713c7d2108b214cc4c259d2519c8eb24b59d12364cfc1e77c54ac",
+     "stage_kinds": [
+      "GATHER",
+      "FILTER",
+      "EXTRACT"
+     ],
+     "version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]"
+    },
+    "migration": null,
+    "model": {
+     "config_hash": "03eaf8df3322de0c89a61296e073e193e06f061bc0f687457bfe9ac34ebb4106",
+     "configuration": {
+      "model": "dogfood-desk-model",
+      "parameters": {},
+      "provider": "openai_compatible"
+     },
+     "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+     "prompt_template_version": "mvp-3",
+     "registry_entry": {
+      "adapter": "openai_compatible",
+      "capabilities": [
+       "structured_output",
+       "text_generation"
+      ],
+      "context_window": null,
+      "enabled": true,
+      "endpoint": "http://127.0.0.1:1975/v1",
+      "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+      "model_id": "dogfood-desk-model",
+      "name": "dogfood-desk",
+      "pricing": {
+       "completion_per_million": 2.0,
+       "currency": "USD",
+       "prompt_per_million": 1.0,
+       "version": "dogfood-2026-10"
+      },
+      "provider": "openai_compatible",
+      "retry": {
+       "backoff_s": 2.0,
+       "max_delay_s": 60.0,
+       "max_retries": 0
+      },
+      "revision": "2026-10-01",
+      "timeout": {
+       "request_timeout_s": 10.0
+      }
+     },
+     "registry_entry_hash": "fa3fbe94e6bfc59e2baeae4feb4bd2f3d7f68700b85d620f62b2ae71862d7180"
+    },
+    "problem_id": "c72ebffb292b002da591984d6bf84ef2c56a580f61884586edbae74ba2ba589d",
+    "runs": [
+     {
+      "candidate_order_hash": "f990ecf56fd6e6469bf015a118fafba9b4d2fce634124b694e2ac88aed27150c",
+      "candidates": 1,
+      "optimizer": "fixed_baseline",
+      "optimizer_config": null,
+      "optimizer_version": "fixed_shortest/1",
+      "run_id": "f94621017dee0b05de239001cd6aea9444e6001dd237ecc38efc8bde5a73ffbc",
+      "seed": 0,
+      "selected_genome_hash": "081bf16800a19bff91f4dec9443fc5f8b3f92eec0f7e1182d216aaa40aec741e",
+      "strategy": "fixed"
+     },
+     {
+      "candidate_order_hash": "9d4006890fff41716d99dbc53ed9489305635b709ffa156b3c440da3aaac231c",
+      "candidates": 4,
+      "optimizer": "random_search_distinct",
+      "optimizer_config": null,
+      "optimizer_version": "random_distinct/1",
+      "run_id": "e704ae12b14ee9c20e10440b79054eeb26f5f2353c2229fa3a460aabbdf92dc0",
+      "seed": 0,
+      "selected_genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+      "strategy": "random"
+     },
+     {
+      "candidate_order_hash": "09ca63c4a629b8a0d5b5553299497b0f0cf374807986b0f326efe0fb75bd8f3f",
+      "candidates": 4,
+      "optimizer": "aco_mmas",
+      "optimizer_config": {
+       "alpha": 1.0,
+       "global_best_period": 5,
+       "lcb_z": 1.0,
+       "rho": 0.3,
+       "tau_max": 1.0,
+       "tau_min": 0.05
+      },
+      "optimizer_version": "aco_mmas/1",
+      "run_id": "515fec6c02a79d1da5c3c703319076cb954f3e2ec3aba3aff509da8dd528f0e2",
+      "seed": 0,
+      "selected_genome_hash": "a0441b5f4f9553ae2b2f3daa916934ac7ffc1a7b77daa8c215c7b29224eeea44",
+      "strategy": "aco"
+     }
+    ],
+    "schema": "wynk-provenance/1",
+    "seeds": [
+     0
+    ],
+    "splits": {
+     "dataset_hash": "51232785a966db51530dcfd60eec8ab281d0b1524f8759cc0744f9368089247a",
+     "method": "seeded_hash/1",
+     "plan": {
+      "seed": 11,
+      "test_bps": 2000,
+      "validation_bps": 2000
+     },
+     "rows": {
+      "optimization": 12,
+      "test": 3,
+      "validation": 3
+     },
+     "splits_hash": "3e5dfbcb30be0be5dd3d1db5902ee27cbb28d791ef19bdf64f84712cf2cc00ce"
+    },
+    "strategies": [
+     "fixed",
+     "random",
+     "aco"
+    ],
+    "synthetic": false,
+    "versions": {
+     "experiment_identity_schema": "experiment/1",
+     "experiment_schema": "wynk-optimization-experiment/2",
+     "job_schema": "wynk-experiment-job/1",
+     "ledger_version": "experiment-ledger/2",
+     "run_versions": [
+      {
+       "benchmark_hash": "inline",
+       "compiler_version": "maf/compiler/1",
+       "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+       "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+       "prompt_template_version": "mvp-3"
+      }
+     ],
+     "runner_version": "optimization-runner/2"
+    }
+   }
+  }
+ },
+ "verify_artifact": {
+  "status": 200,
+  "body": {
+   "job_id": "j-91c5aea377ff472989a60593",
+   "artifact_id": "15ef598bafe40fee1bad5c977b9e3f4b31768cc9cf9cc5616dfeac3e250983ae",
+   "provenance_id": "54b2de4a369b0be9d567c8f353ed06c6c5c5ecd0a164db419193e5ecb74e8917",
+   "experiment_sha256": "4fe6d09169b9d930fa8b01ea3bbc41de1018f1eadef48408995f83cac53de566",
+   "scientific_sha256": "22fe3ac6afa6ec05f635276adaafb22e438d14173d704d3d8ed745b01d981040",
+   "verified": true,
+   "checks": [
+    "envelope hashes to artifact_id",
+    "result body matches its sha256 link and canonical form",
+    "scientific_sha256 hashes the body's scientific fields"
+   ],
+   "declared_metric_checks": 686,
+   "field_classes": {
+    "scientific": 3578,
+    "measured_telemetry": 369,
+    "clock_telemetry": 594
+   },
+   "promotion": null
+  }
+ },
+ "error_job_not_cancellable": {
+  "status": 409,
+  "body": {
+   "error": {
+    "code": "job_not_cancellable",
+    "message": "job j-91c5aea377ff472989a60593 is already COMPLETED",
+    "details": {}
+   }
+  }
+ },
+ "error_champion_not_found": {
+  "status": 404,
+  "body": {
+   "error": {
+    "code": "champion_not_found",
+    "message": "lineage order-desk.order-desk has no champion",
+    "details": {}
+   }
+  }
+ },
+ "promote_experiment": {
+  "status": 201,
+  "body": {
+   "promotion_id": "p-815cf47694377efce6abff46",
+   "job_id": "j-91c5aea377ff472989a60593",
+   "lineage_id": "order-desk.order-desk",
+   "state": "DECIDED",
+   "reason": null,
+   "detail": null,
+   "created_at": "2026-10-31T19:48:54.344+00:00",
+   "updated_at": "2026-10-31T19:48:54.608+00:00",
+   "test_opened_at": "2026-10-31T19:48:54.344+00:00",
+   "incumbent_id": null,
+   "incumbent_version": 0,
+   "challenger": {
+    "candidate_id": "random/0/1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+    "first_evaluation": 1,
+    "genome": {
+     "schema": "genome/1",
+     "stages": [
+      {
+       "kind": "GATHER",
+       "mode": "parallel-4",
+       "source": "fetch"
+      },
+      {
+       "kind": "FILTER",
+       "method": "keyword_chunk"
+      },
+      {
+       "kind": "EXTRACT",
+       "method": "schema_guided"
+      }
+     ]
+    },
+    "genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+    "optimizer": "random_search_distinct",
+    "optimizer_version": "random_distinct/1",
+    "rank": {
+     "feasible": true,
+     "rank_key": [
+      1.0,
+      1.0
+     ],
+     "violation_codes": [],
+     "violations": []
+    },
+    "reason_codes": [
+     "selected_on_validation"
+    ],
+    "run_id": "e704ae12b14ee9c20e10440b79054eeb26f5f2353c2229fa3a460aabbdf92dc0",
+    "seed": 0,
+    "status": "VALIDATED",
+    "strategy": "random",
+    "validation": {
+     "attempt_ids": [
+      "ae6944b7a30bcd25019884d0e60c78593813ca0f06edb4b2bca2f8989144e4a8",
+      "f8c2a11a03ba92ec233c63a1709e5a23528a082b40a00a29bffd41ed016b73b7",
+      "1f36ec03ff65e99f150fcd1702bcdaff13786db2760295670953471af94d2e09"
+     ],
+     "fitness_mean": 1.09952,
+     "pass_rate": 1.0,
+     "runs": 3,
+     "score_mean": 1.0
+    }
+   },
+   "decision": "PROMOTED",
+   "record": {
+    "artifact": {
+     "artifact_id": "15ef598bafe40fee1bad5c977b9e3f4b31768cc9cf9cc5616dfeac3e250983ae",
+     "experiment_sha256": "4fe6d09169b9d930fa8b01ea3bbc41de1018f1eadef48408995f83cac53de566",
+     "provenance_id": "54b2de4a369b0be9d567c8f353ed06c6c5c5ecd0a164db419193e5ecb74e8917",
+     "scientific_sha256": "22fe3ac6afa6ec05f635276adaafb22e438d14173d704d3d8ed745b01d981040"
+    },
+    "challenger": {
+     "candidate_id": "random/0/1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+     "genome": {
+      "schema": "genome/1",
+      "stages": [
+       {
+        "kind": "GATHER",
+        "mode": "parallel-4",
+        "source": "fetch"
+       },
+       {
+        "kind": "FILTER",
+        "method": "keyword_chunk"
+       },
+       {
+        "kind": "EXTRACT",
+        "method": "schema_guided"
+       }
+      ]
+     },
+     "genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+     "optimizer": "random_search_distinct",
+     "optimizer_version": "random_distinct/1",
+     "run_id": "e704ae12b14ee9c20e10440b79054eeb26f5f2353c2229fa3a460aabbdf92dc0",
+     "seed": 0,
+     "status": "CHAMPION",
+     "strategy": "random"
+    },
+    "champion": {
+     "champion_id": "c-16cf524b47f31f4e2160aef5",
+     "version": 1
+    },
+    "comparison": {
+     "challenger_key": [
+      1.0,
+      1.0
+     ],
+     "comparator": "TaskContract.rank -> CandidateRank.sort_key, higher is better: every feasible key outranks every infeasible one; maximize objectives compare (quality,), minimize objectives (-metric, quality), balanced (utility,)",
+     "incumbent_key": null,
+     "relation": null
+    },
+    "constraints": {
+     "challenger": {
+      "feasible": true,
+      "violation_codes": [],
+      "violations": []
+     },
+     "incumbent": null
+    },
+    "decision": "PROMOTED",
+    "decision_hash": "f4436aa392cf7445a304cd25ee178edb00bc9a205de55fd0f09765db67b3375c",
+    "evaluation_context": {
+     "context_hash": "fb58c0c051d27f091d2c3f2a80d70d92da23347358dd8d4168ec220da2e9cc3a",
+     "dataset_content_hash": "5da878fdf441c82dd76e2863ae9855fc5580f140718dfd74eb1f75800a11a9df",
+     "dataset_hash": "51232785a966db51530dcfd60eec8ab281d0b1524f8759cc0744f9368089247a",
+     "dataset_id": "order-desk",
+     "dataset_version": 1,
+     "evaluator": {
+      "evaluation_hash": "88964a3cf9224e3c8a28a590339c9df8011d2586b1206c4799eb077230c5e171",
+      "evaluator_version": "exact_match/1+fitness/mvp-2"
+     },
+     "model_attempts": 3,
+     "protocol": "heldout-gate/1",
+     "schema": "wynk-heldout-context/1",
+     "seeds": [
+      [
+       "T-0004",
+       20000,
+       3955410618
+      ],
+      [
+       "T-0010",
+       20000,
+       2835341294
+      ],
+      [
+       "T-0011",
+       20000,
+       1362988249
+      ]
+     ],
+     "splits_hash": "3e5dfbcb30be0be5dd3d1db5902ee27cbb28d791ef19bdf64f84712cf2cc00ce",
+     "task_contract_hash": "18d4a33811e1cf756371e7e6e1b4ab6b72c6e54c88a7adce72b8b6933aed1580",
+     "test_row_ids": [
+      "T-0004",
+      "T-0010",
+      "T-0011"
+     ],
+     "trials": [
+      20000
+     ]
+    },
+    "experiment": {
+     "definition_hash": "e6b90742842d6674cdfde6db98a11cd692d60961c7765eba029af0232dbe0fc4",
+     "experiment_id": "4b2faad550fffe39bf57b782a71b66ebe86e8a620d633773c5f8189c4e02fa90",
+     "job_id": "j-91c5aea377ff472989a60593",
+     "problem_id": "c72ebffb292b002da591984d6bf84ef2c56a580f61884586edbae74ba2ba589d",
+     "synthetic": false
+    },
+    "gate": {
+     "decision": "PROMOTED",
+     "reason_codes": [
+      "heldout_constraints_passed",
+      "initial_champion"
+     ]
+    },
+    "heldout": {
+     "challenger": {
+      "attempt_ids": [
+       "a656a0abf46f0c27dffc2fd21fe15adcc711e36f2e2a3e284d999809919ba6e1",
+       "b5510a919f1738e76bf5e490ad44f6b81dfd9cd6950dcfd89b55714f2d1a93cc",
+       "d071e72efe1737df34cc2cc24d07b3db96dfceca89271e3607c12ad1c4d52290"
+      ],
+      "feasible": true,
+      "fitness_mean": 1.09952,
+      "genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+      "measurements": {
+       "max_model_calls_per_example": 2,
+       "max_retries_per_example": 0,
+       "max_tokens_per_example": 96,
+       "max_tool_calls_per_example": 1,
+       "max_wall_time_s_per_example": 0.007527399997343309,
+       "mean_cost_per_example": null,
+       "mean_latency_s": 0.007306699999996151,
+       "mean_tokens_per_example": 96.0,
+       "p95_latency_s": 0.007527399997343309,
+       "quality": 1.0,
+       "workflow_steps": 7
+      },
+      "pass_rate": 1.0,
+      "rank_key": [
+       1.0,
+       1.0
+      ],
+      "row_ids": [
+       "T-0004",
+       "T-0010",
+       "T-0011"
+      ],
+      "runs": 3,
+      "score_mean": 1.0,
+      "violation_codes": [],
+      "violations": []
+     },
+     "incumbent": null,
+     "protocol": {
+      "model_attempts": 3,
+      "protocol": "heldout-gate/1",
+      "row_ids": [
+       "T-0004",
+       "T-0010",
+       "T-0011"
+      ],
+      "seeds": "heldout_seed(row, trial): identical for challenger and incumbent",
+      "split": "test",
+      "trials": [
+       20000
+      ]
+     }
+    },
+    "identities": {
+     "compat_hash": "b176d5c410eba8628c4444f935669031b07ec7356613e26a03d7d38dd5c1b347",
+     "constraints": {
+      "maximum_cost_per_example": null,
+      "maximum_mean_latency_s": null,
+      "maximum_model_calls": 4,
+      "maximum_p95_latency_s": null,
+      "maximum_retries": 2,
+      "maximum_tokens_per_example": 20000,
+      "maximum_tool_calls": 20,
+      "maximum_wall_time_s": 120.0,
+      "maximum_workflow_steps": null,
+      "minimum_quality": null
+     },
+     "constraints_hash": "b65cb4de4f37515136acd1909f0b1623f9a7724aec7a8a7b9c9af12ed4e8cec5",
+     "contract_version": 1,
+     "dataset_content_hash": "5da878fdf441c82dd76e2863ae9855fc5580f140718dfd74eb1f75800a11a9df",
+     "dataset_hash": "51232785a966db51530dcfd60eec8ab281d0b1524f8759cc0744f9368089247a",
+     "dataset_id": "order-desk",
+     "dataset_version": 1,
+     "decision_schema": "wynk-promotion-decision/3",
+     "evaluation_hash": "88964a3cf9224e3c8a28a590339c9df8011d2586b1206c4799eb077230c5e171",
+     "evaluator_version": "exact_match/1+fitness/mvp-2",
+     "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+     "heldout_protocol": "heldout-gate/1",
+     "lineage_hash": "5028340e13d2d5c8f33fe0ff6ab1e46b7b2702d2c75e9182304c2aaf9f14c6d4",
+     "model": {
+      "model": "dogfood-desk-model",
+      "parameters": {},
+      "provider": "openai_compatible"
+     },
+     "model_config_hash": "03eaf8df3322de0c89a61296e073e193e06f061bc0f687457bfe9ac34ebb4106",
+     "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+     "objective": {
+      "mode": "maximize_quality",
+      "scales": {},
+      "schema_version": "objectivespec/1",
+      "weights": {}
+     },
+     "objective_hash": "10d136caeadfbef5c46feb334f5c82299f3e8aaf539125e22f4ffbd0090a7045",
+     "prompt_template_version": "mvp-3",
+     "run_versions": [
+      {
+       "benchmark_hash": "inline",
+       "compiler_version": "maf/compiler/1",
+       "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+       "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+       "prompt_template_version": "mvp-3"
+      }
+     ],
+     "selection_rule": "validation-rank/1",
+     "splits_hash": "3e5dfbcb30be0be5dd3d1db5902ee27cbb28d791ef19bdf64f84712cf2cc00ce",
+     "synthetic": false,
+     "task_contract_hash": "18d4a33811e1cf756371e7e6e1b4ab6b72c6e54c88a7adce72b8b6933aed1580",
+     "task_id": "order-desk",
+     "test_row_ids": [
+      "T-0004",
+      "T-0010",
+      "T-0011"
+     ]
+    },
+    "incumbent": null,
+    "lineage_id": "order-desk.order-desk",
+    "lineage_identity": {
+     "constraints": {
+      "maximum_cost_per_example": null,
+      "maximum_mean_latency_s": null,
+      "maximum_model_calls": 4,
+      "maximum_p95_latency_s": null,
+      "maximum_retries": 2,
+      "maximum_tokens_per_example": 20000,
+      "maximum_tool_calls": 20,
+      "maximum_wall_time_s": 120.0,
+      "maximum_workflow_steps": null,
+      "minimum_quality": null
+     },
+     "constraints_hash": "b65cb4de4f37515136acd1909f0b1623f9a7724aec7a8a7b9c9af12ed4e8cec5",
+     "contract_version": 1,
+     "dataset_id": "order-desk",
+     "evaluation": {
+      "config": {
+       "case_sensitive": false,
+       "normalize_whitespace": false
+      },
+      "evaluator": "exact_match",
+      "evaluator_version": "exact_match/1",
+      "schema_version": "evaluationspec/1"
+     },
+     "evaluation_hash": "88964a3cf9224e3c8a28a590339c9df8011d2586b1206c4799eb077230c5e171",
+     "evaluator_version": "exact_match/1+fitness/mvp-2",
+     "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+     "heldout_protocol": "heldout-gate/1",
+     "input_schema": {
+      "fields": [
+       {
+        "name": "question",
+        "required": true,
+        "type": "string"
+       },
+       {
+        "name": "order_record",
+        "required": true,
+        "type": "string"
+       }
+      ]
+     },
+     "instructions": "Name the destination city of the order, using only the order record.",
+     "lineage_hash": "5028340e13d2d5c8f33fe0ff6ab1e46b7b2702d2c75e9182304c2aaf9f14c6d4",
+     "model": {
+      "model": "dogfood-desk-model",
+      "parameters": {},
+      "provider": "openai_compatible"
+     },
+     "model_config_hash": "03eaf8df3322de0c89a61296e073e193e06f061bc0f687457bfe9ac34ebb4106",
+     "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+     "objective": {
+      "mode": "maximize_quality",
+      "scales": {},
+      "schema_version": "objectivespec/1",
+      "weights": {}
+     },
+     "objective_hash": "10d136caeadfbef5c46feb334f5c82299f3e8aaf539125e22f4ffbd0090a7045",
+     "output_schema": {
+      "fields": [
+       {
+        "name": "answer",
+        "required": true,
+        "type": "string"
+       }
+      ]
+     },
+     "prompt_template_version": "mvp-3",
+     "run_versions": [
+      {
+       "benchmark_hash": "inline",
+       "compiler_version": "maf/compiler/1",
+       "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+       "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+       "prompt_template_version": "mvp-3"
+      }
+     ],
+     "schema": "wynk-lineage/1",
+     "synthetic": false,
+     "task_id": "order-desk",
+     "task_semantics_hash": "15b95660331ea540e8ae12eb3743f6ffbbfa49d6b8b98da734a34775f62cad5c",
+     "task_type": "question_answering",
+     "workflow": {
+      "allowed_sources": [
+       "fetch"
+      ],
+      "interaction_required": false,
+      "stages": [
+       "GATHER",
+       "FILTER",
+       "EXTRACT"
+      ]
+     }
+    },
+    "promotion_id": "p-815cf47694377efce6abff46",
+    "reason_codes": [
+     "heldout_constraints_passed",
+     "initial_champion"
+    ],
+    "schema": "wynk-promotion-decision/3",
+    "selection": {
+     "candidates": [
+      {
+       "candidate_id": "fixed/0/081bf16800a19bff91f4dec9443fc5f8b3f92eec0f7e1182d216aaa40aec741e",
+       "first_evaluation": 1,
+       "genome": {
+        "schema": "genome/1",
+        "stages": [
+         {
+          "kind": "DIRECT",
+          "method": "answer"
+         }
+        ]
+       },
+       "genome_hash": "081bf16800a19bff91f4dec9443fc5f8b3f92eec0f7e1182d216aaa40aec741e",
+       "optimizer": "fixed_baseline",
+       "optimizer_version": "fixed_shortest/1",
+       "rank": {
+        "feasible": true,
+        "rank_key": [
+         1.0,
+         0.0
+        ],
+        "violation_codes": [],
+        "violations": []
+       },
+       "reason_codes": [
+        "outranked_on_validation"
+       ],
+       "run_id": "f94621017dee0b05de239001cd6aea9444e6001dd237ecc38efc8bde5a73ffbc",
+       "seed": 0,
+       "status": "CANDIDATE",
+       "strategy": "fixed",
+       "validation": {
+        "attempt_ids": [
+         "eb18faf9b7ec34736c565af42ad0fe18184f48211d96529e184c5e9f2a8b407a",
+         "5ea2bc58d57e419b3f29362f774f363db27e53f5cf07b34b013649cd006516da",
+         "4da8a89b2d0dc775f7240dda15af00ebf3bdba3c26b2c98f201f3552f1fd8fcb"
+        ],
+        "fitness_mean": 0.0,
+        "pass_rate": 0.0,
+        "runs": 3,
+        "score_mean": 0.0
+       }
+      },
+      {
+       "candidate_id": "random/0/1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+       "first_evaluation": 1,
+       "genome": {
+        "schema": "genome/1",
+        "stages": [
+         {
+          "kind": "GATHER",
+          "mode": "parallel-4",
+          "source": "fetch"
+         },
+         {
+          "kind": "FILTER",
+          "method": "keyword_chunk"
+         },
+         {
+          "kind": "EXTRACT",
+          "method": "schema_guided"
+         }
+        ]
+       },
+       "genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+       "optimizer": "random_search_distinct",
+       "optimizer_version": "random_distinct/1",
+       "rank": {
+        "feasible": true,
+        "rank_key": [
+         1.0,
+         1.0
+        ],
+        "violation_codes": [],
+        "violations": []
+       },
+       "reason_codes": [
+        "selected_on_validation"
+       ],
+       "run_id": "e704ae12b14ee9c20e10440b79054eeb26f5f2353c2229fa3a460aabbdf92dc0",
+       "seed": 0,
+       "status": "VALIDATED",
+       "strategy": "random",
+       "validation": {
+        "attempt_ids": [
+         "ae6944b7a30bcd25019884d0e60c78593813ca0f06edb4b2bca2f8989144e4a8",
+         "f8c2a11a03ba92ec233c63a1709e5a23528a082b40a00a29bffd41ed016b73b7",
+         "1f36ec03ff65e99f150fcd1702bcdaff13786db2760295670953471af94d2e09"
+        ],
+        "fitness_mean": 1.09952,
+        "pass_rate": 1.0,
+        "runs": 3,
+        "score_mean": 1.0
+       }
+      },
+      {
+       "candidate_id": "aco/0/a0441b5f4f9553ae2b2f3daa916934ac7ffc1a7b77daa8c215c7b29224eeea44",
+       "first_evaluation": 1,
+       "genome": {
+        "schema": "genome/1",
+        "stages": [
+         {
+          "kind": "GATHER",
+          "mode": "parallel-4",
+          "source": "fetch"
+         },
+         {
+          "kind": "FILTER",
+          "method": "keyword_chunk"
+         },
+         {
+          "kind": "EXTRACT",
+          "method": "cot"
+         }
+        ]
+       },
+       "genome_hash": "a0441b5f4f9553ae2b2f3daa916934ac7ffc1a7b77daa8c215c7b29224eeea44",
+       "optimizer": "aco_mmas",
+       "optimizer_version": "aco_mmas/1",
+       "rank": {
+        "feasible": true,
+        "rank_key": [
+         1.0,
+         1.0
+        ],
+        "violation_codes": [],
+        "violations": []
+       },
+       "reason_codes": [
+        "outranked_on_validation"
+       ],
+       "run_id": "515fec6c02a79d1da5c3c703319076cb954f3e2ec3aba3aff509da8dd528f0e2",
+       "seed": 0,
+       "status": "CANDIDATE",
+       "strategy": "aco",
+       "validation": {
+        "attempt_ids": [
+         "02ffb56ae2c85d30e7183931414f2bae5a35b3e594d8bf46a73af7f640366e95",
+         "3315b974e37acb6f181c558f7fa081dddd46677e0f668a2f5ce1838eacc9b2d0",
+         "dcdf6848d016c29b027c59b1cdbf669595e0873e85d0832b935e735e07179d96"
+        ],
+        "fitness_mean": 1.09928,
+        "pass_rate": 1.0,
+        "runs": 3,
+        "score_mean": 1.0
+       }
+      }
+     ],
+     "challenger": "random/0/1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+     "constraints": {
+      "maximum_cost_per_example": null,
+      "maximum_mean_latency_s": null,
+      "maximum_model_calls": 4,
+      "maximum_p95_latency_s": null,
+      "maximum_retries": 2,
+      "maximum_tokens_per_example": 20000,
+      "maximum_tool_calls": 20,
+      "maximum_wall_time_s": 120.0,
+      "maximum_workflow_steps": null,
+      "minimum_quality": null
+     },
+     "description": "validation runs only: candidates that violate a hard constraint are rejected; feasible candidates are ranked by TaskContract.rank (CandidateRank.sort_key); ties: higher mean validation score, then earlier first evaluation, then plan strategy order, then plan seed order",
+     "objective": {
+      "mode": "maximize_quality",
+      "scales": {},
+      "schema_version": "objectivespec/1",
+      "weights": {}
+     },
+     "ranking": [
+      "random/0/1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+      "aco/0/a0441b5f4f9553ae2b2f3daa916934ac7ffc1a7b77daa8c215c7b29224eeea44",
+      "fixed/0/081bf16800a19bff91f4dec9443fc5f8b3f92eec0f7e1182d216aaa40aec741e"
+     ],
+     "rule": "validation-rank/1",
+     "split": "validation",
+     "validation_row_ids": [
+      "T-0009",
+      "T-0015",
+      "T-0018"
+     ]
+    },
+    "test_opened": true
+   },
+   "heldout_attempts": {
+    "completed": 3,
+    "in_flight": 0,
+    "errored": 0,
+    "reused_by_proof": 0
+   },
+   "artifact": {
+    "artifact_id": "15ef598bafe40fee1bad5c977b9e3f4b31768cc9cf9cc5616dfeac3e250983ae",
+    "experiment_sha256": "4fe6d09169b9d930fa8b01ea3bbc41de1018f1eadef48408995f83cac53de566",
+    "provenance_id": "54b2de4a369b0be9d567c8f353ed06c6c5c5ecd0a164db419193e5ecb74e8917",
+    "scientific_sha256": "22fe3ac6afa6ec05f635276adaafb22e438d14173d704d3d8ed745b01d981040"
+   }
+  }
+ },
+ "get_champion": {
+  "status": 200,
+  "body": {
+   "champion_id": "c-16cf524b47f31f4e2160aef5",
+   "lineage_id": "order-desk.order-desk",
+   "version": 1,
+   "promotion_id": "p-815cf47694377efce6abff46",
+   "created_at": "2026-10-31T19:48:54.608+00:00",
+   "record": {
+    "champion_id": "c-16cf524b47f31f4e2160aef5",
+    "compatibility": {
+     "compat_hash": "b176d5c410eba8628c4444f935669031b07ec7356613e26a03d7d38dd5c1b347",
+     "constraints": {
+      "maximum_cost_per_example": null,
+      "maximum_mean_latency_s": null,
+      "maximum_model_calls": 4,
+      "maximum_p95_latency_s": null,
+      "maximum_retries": 2,
+      "maximum_tokens_per_example": 20000,
+      "maximum_tool_calls": 20,
+      "maximum_wall_time_s": 120.0,
+      "maximum_workflow_steps": null,
+      "minimum_quality": null
+     },
+     "constraints_hash": "b65cb4de4f37515136acd1909f0b1623f9a7724aec7a8a7b9c9af12ed4e8cec5",
+     "contract_version": 1,
+     "dataset_content_hash": "5da878fdf441c82dd76e2863ae9855fc5580f140718dfd74eb1f75800a11a9df",
+     "dataset_hash": "51232785a966db51530dcfd60eec8ab281d0b1524f8759cc0744f9368089247a",
+     "dataset_id": "order-desk",
+     "dataset_version": 1,
+     "evaluation_hash": "88964a3cf9224e3c8a28a590339c9df8011d2586b1206c4799eb077230c5e171",
+     "evaluator_version": "exact_match/1+fitness/mvp-2",
+     "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+     "heldout_protocol": "heldout-gate/1",
+     "model": {
+      "model": "dogfood-desk-model",
+      "parameters": {},
+      "provider": "openai_compatible"
+     },
+     "model_config_hash": "03eaf8df3322de0c89a61296e073e193e06f061bc0f687457bfe9ac34ebb4106",
+     "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+     "objective": {
+      "mode": "maximize_quality",
+      "scales": {},
+      "schema_version": "objectivespec/1",
+      "weights": {}
+     },
+     "objective_hash": "10d136caeadfbef5c46feb334f5c82299f3e8aaf539125e22f4ffbd0090a7045",
+     "prompt_template_version": "mvp-3",
+     "run_versions": [
+      {
+       "benchmark_hash": "inline",
+       "compiler_version": "maf/compiler/1",
+       "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+       "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+       "prompt_template_version": "mvp-3"
+      }
+     ],
+     "splits_hash": "3e5dfbcb30be0be5dd3d1db5902ee27cbb28d791ef19bdf64f84712cf2cc00ce",
+     "synthetic": false,
+     "task_contract_hash": "18d4a33811e1cf756371e7e6e1b4ab6b72c6e54c88a7adce72b8b6933aed1580",
+     "task_id": "order-desk",
+     "test_row_ids": [
+      "T-0004",
+      "T-0010",
+      "T-0011"
+     ]
+    },
+    "evaluation_context": {
+     "context_hash": "fb58c0c051d27f091d2c3f2a80d70d92da23347358dd8d4168ec220da2e9cc3a",
+     "dataset_content_hash": "5da878fdf441c82dd76e2863ae9855fc5580f140718dfd74eb1f75800a11a9df",
+     "dataset_hash": "51232785a966db51530dcfd60eec8ab281d0b1524f8759cc0744f9368089247a",
+     "dataset_id": "order-desk",
+     "dataset_version": 1,
+     "evaluator": {
+      "evaluation_hash": "88964a3cf9224e3c8a28a590339c9df8011d2586b1206c4799eb077230c5e171",
+      "evaluator_version": "exact_match/1+fitness/mvp-2"
+     },
+     "model_attempts": 3,
+     "protocol": "heldout-gate/1",
+     "schema": "wynk-heldout-context/1",
+     "seeds": [
+      [
+       "T-0004",
+       20000,
+       3955410618
+      ],
+      [
+       "T-0010",
+       20000,
+       2835341294
+      ],
+      [
+       "T-0011",
+       20000,
+       1362988249
+      ]
+     ],
+     "splits_hash": "3e5dfbcb30be0be5dd3d1db5902ee27cbb28d791ef19bdf64f84712cf2cc00ce",
+     "task_contract_hash": "18d4a33811e1cf756371e7e6e1b4ab6b72c6e54c88a7adce72b8b6933aed1580",
+     "test_row_ids": [
+      "T-0004",
+      "T-0010",
+      "T-0011"
+     ],
+     "trials": [
+      20000
+     ]
+    },
+    "genome": {
+     "schema": "genome/1",
+     "stages": [
+      {
+       "kind": "GATHER",
+       "mode": "parallel-4",
+       "source": "fetch"
+      },
+      {
+       "kind": "FILTER",
+       "method": "keyword_chunk"
+      },
+      {
+       "kind": "EXTRACT",
+       "method": "schema_guided"
+      }
+     ]
+    },
+    "genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+    "heldout": {
+     "attempt_ids": [
+      "a656a0abf46f0c27dffc2fd21fe15adcc711e36f2e2a3e284d999809919ba6e1",
+      "b5510a919f1738e76bf5e490ad44f6b81dfd9cd6950dcfd89b55714f2d1a93cc",
+      "d071e72efe1737df34cc2cc24d07b3db96dfceca89271e3607c12ad1c4d52290"
+     ],
+     "feasible": true,
+     "fitness_mean": 1.09952,
+     "genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+     "measurements": {
+      "max_model_calls_per_example": 2,
+      "max_retries_per_example": 0,
+      "max_tokens_per_example": 96,
+      "max_tool_calls_per_example": 1,
+      "max_wall_time_s_per_example": 0.007527399997343309,
+      "mean_cost_per_example": null,
+      "mean_latency_s": 0.007306699999996151,
+      "mean_tokens_per_example": 96.0,
+      "p95_latency_s": 0.007527399997343309,
+      "quality": 1.0,
+      "workflow_steps": 7
+     },
+     "pass_rate": 1.0,
+     "rank_key": [
+      1.0,
+      1.0
+     ],
+     "row_ids": [
+      "T-0004",
+      "T-0010",
+      "T-0011"
+     ],
+     "runs": 3,
+     "score_mean": 1.0,
+     "violation_codes": [],
+     "violations": []
+    },
+    "lineage_id": "order-desk.order-desk",
+    "lineage_identity": {
+     "constraints": {
+      "maximum_cost_per_example": null,
+      "maximum_mean_latency_s": null,
+      "maximum_model_calls": 4,
+      "maximum_p95_latency_s": null,
+      "maximum_retries": 2,
+      "maximum_tokens_per_example": 20000,
+      "maximum_tool_calls": 20,
+      "maximum_wall_time_s": 120.0,
+      "maximum_workflow_steps": null,
+      "minimum_quality": null
+     },
+     "constraints_hash": "b65cb4de4f37515136acd1909f0b1623f9a7724aec7a8a7b9c9af12ed4e8cec5",
+     "contract_version": 1,
+     "dataset_id": "order-desk",
+     "evaluation": {
+      "config": {
+       "case_sensitive": false,
+       "normalize_whitespace": false
+      },
+      "evaluator": "exact_match",
+      "evaluator_version": "exact_match/1",
+      "schema_version": "evaluationspec/1"
+     },
+     "evaluation_hash": "88964a3cf9224e3c8a28a590339c9df8011d2586b1206c4799eb077230c5e171",
+     "evaluator_version": "exact_match/1+fitness/mvp-2",
+     "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+     "heldout_protocol": "heldout-gate/1",
+     "input_schema": {
+      "fields": [
+       {
+        "name": "question",
+        "required": true,
+        "type": "string"
+       },
+       {
+        "name": "order_record",
+        "required": true,
+        "type": "string"
+       }
+      ]
+     },
+     "instructions": "Name the destination city of the order, using only the order record.",
+     "lineage_hash": "5028340e13d2d5c8f33fe0ff6ab1e46b7b2702d2c75e9182304c2aaf9f14c6d4",
+     "model": {
+      "model": "dogfood-desk-model",
+      "parameters": {},
+      "provider": "openai_compatible"
+     },
+     "model_config_hash": "03eaf8df3322de0c89a61296e073e193e06f061bc0f687457bfe9ac34ebb4106",
+     "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+     "objective": {
+      "mode": "maximize_quality",
+      "scales": {},
+      "schema_version": "objectivespec/1",
+      "weights": {}
+     },
+     "objective_hash": "10d136caeadfbef5c46feb334f5c82299f3e8aaf539125e22f4ffbd0090a7045",
+     "output_schema": {
+      "fields": [
+       {
+        "name": "answer",
+        "required": true,
+        "type": "string"
+       }
+      ]
+     },
+     "prompt_template_version": "mvp-3",
+     "run_versions": [
+      {
+       "benchmark_hash": "inline",
+       "compiler_version": "maf/compiler/1",
+       "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+       "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+       "prompt_template_version": "mvp-3"
+      }
+     ],
+     "schema": "wynk-lineage/1",
+     "synthetic": false,
+     "task_id": "order-desk",
+     "task_semantics_hash": "15b95660331ea540e8ae12eb3743f6ffbbfa49d6b8b98da734a34775f62cad5c",
+     "task_type": "question_answering",
+     "workflow": {
+      "allowed_sources": [
+       "fetch"
+      ],
+      "interaction_required": false,
+      "stages": [
+       "GATHER",
+       "FILTER",
+       "EXTRACT"
+      ]
+     }
+    },
+    "previous_champion_id": null,
+    "provenance": {
+     "artifact_id": "15ef598bafe40fee1bad5c977b9e3f4b31768cc9cf9cc5616dfeac3e250983ae",
+     "definition_hash": "e6b90742842d6674cdfde6db98a11cd692d60961c7765eba029af0232dbe0fc4",
+     "experiment_id": "4b2faad550fffe39bf57b782a71b66ebe86e8a620d633773c5f8189c4e02fa90",
+     "job_id": "j-91c5aea377ff472989a60593",
+     "optimizer": "random_search_distinct",
+     "optimizer_version": "random_distinct/1",
+     "promotion_id": "p-815cf47694377efce6abff46",
+     "provenance_id": "54b2de4a369b0be9d567c8f353ed06c6c5c5ecd0a164db419193e5ecb74e8917",
+     "run_id": "e704ae12b14ee9c20e10440b79054eeb26f5f2353c2229fa3a460aabbdf92dc0",
+     "seed": 0,
+     "strategy": "random"
+    },
+    "schema": "wynk-champion/2",
+    "validation": {
+     "attempt_ids": [
+      "ae6944b7a30bcd25019884d0e60c78593813ca0f06edb4b2bca2f8989144e4a8",
+      "f8c2a11a03ba92ec233c63a1709e5a23528a082b40a00a29bffd41ed016b73b7",
+      "1f36ec03ff65e99f150fcd1702bcdaff13786db2760295670953471af94d2e09"
+     ],
+     "fitness_mean": 1.09952,
+     "pass_rate": 1.0,
+     "rank": {
+      "feasible": true,
+      "rank_key": [
+       1.0,
+       1.0
+      ],
+      "violation_codes": [],
+      "violations": []
+     },
+     "runs": 3,
+     "score_mean": 1.0
+    },
+    "version": 1
+   }
+  }
+ },
+ "error_deployment_not_found": {
+  "status": 404,
+  "body": {
+   "error": {
+    "code": "deployment_not_found",
+    "message": "lineage order-desk.order-desk has no published workflow version",
+    "details": {}
+   }
+  }
+ },
+ "publish_workflow": {
+  "status": 201,
+  "body": {
+   "version_id": "wv-56d814bbc773d80384fea8d5",
+   "lineage_id": "order-desk.order-desk",
+   "champion_id": "c-16cf524b47f31f4e2160aef5",
+   "state": "CREATED",
+   "created_at": "2026-10-31T19:48:54.802+00:00",
+   "state_updated_at": "2026-10-31T19:48:54.802+00:00",
+   "document": {
+    "champion": {
+     "champion_id": "c-16cf524b47f31f4e2160aef5",
+     "champion_version": 1,
+     "compat_hash": "5028340e13d2d5c8f33fe0ff6ab1e46b7b2702d2c75e9182304c2aaf9f14c6d4",
+     "decision_hash": "f4436aa392cf7445a304cd25ee178edb00bc9a205de55fd0f09765db67b3375c",
+     "promotion_id": "p-815cf47694377efce6abff46",
+     "record_sha256": "026b93d6701d7e7a7eec680cf907be4613c196070bf5c9ffe5fe8ea09b2cf64f"
+    },
+    "contract": {
+     "contract_hash": "18d4a33811e1cf756371e7e6e1b4ab6b72c6e54c88a7adce72b8b6933aed1580",
+     "contract_version": 1,
+     "input_schema": {
+      "fields": [
+       {
+        "name": "question",
+        "required": true,
+        "type": "string"
+       },
+       {
+        "name": "order_record",
+        "required": true,
+        "type": "string"
+       }
+      ]
+     },
+     "output_schema": {
+      "fields": [
+       {
+        "name": "answer",
+        "required": true,
+        "type": "string"
+       }
+      ]
+     },
+     "task_contract": {
+      "constraints": {
+       "maximum_cost_per_example": null,
+       "maximum_mean_latency_s": null,
+       "maximum_model_calls": 4,
+       "maximum_p95_latency_s": null,
+       "maximum_retries": 2,
+       "maximum_tokens_per_example": 20000,
+       "maximum_tool_calls": 20,
+       "maximum_wall_time_s": 120.0,
+       "maximum_workflow_steps": null,
+       "minimum_quality": null
+      },
+      "contract_version": 1,
+      "dataset": {
+       "columns": [
+        {
+         "name": "ticket_id",
+         "nullable": false,
+         "type": "string"
+        },
+        {
+         "name": "question",
+         "nullable": false,
+         "type": "string"
+        },
+        {
+         "name": "order_record",
+         "nullable": false,
+         "type": "string"
+        }
+       ],
+       "content_hash": "5da878fdf441c82dd76e2863ae9855fc5580f140718dfd74eb1f75800a11a9df",
+       "context_columns": [
+        "order_record"
+       ],
+       "dataset_id": "order-desk",
+       "dataset_version": 1,
+       "format": "csv",
+       "id_column": "ticket_id",
+       "input_columns": [
+        "question"
+       ],
+       "metadata": {
+        "row_ids": "column"
+       },
+       "name": "Order desk",
+       "row_count": 18,
+       "schema_version": "datasetspec/1",
+       "target_columns": [
+        "answer"
+       ]
+      },
+      "evaluation": {
+       "config": {
+        "case_sensitive": false,
+        "normalize_whitespace": false
+       },
+       "evaluator": "exact_match",
+       "evaluator_version": "exact_match/1",
+       "schema_version": "evaluationspec/1"
+      },
+      "input_schema": {
+       "fields": [
+        {
+         "name": "question",
+         "required": true,
+         "type": "string"
+        },
+        {
+         "name": "order_record",
+         "required": true,
+         "type": "string"
+        }
+       ]
+      },
+      "instructions": "Name the destination city of the order, using only the order record.",
+      "objective": {
+       "mode": "maximize_quality",
+       "scales": {},
+       "schema_version": "objectivespec/1",
+       "weights": {}
+      },
+      "output_schema": {
+       "fields": [
+        {
+         "name": "answer",
+         "required": true,
+         "type": "string"
+        }
+       ]
+      },
+      "schema_version": "taskcontract/1",
+      "task_id": "order-desk",
+      "task_type": "question_answering",
+      "workflow": {
+       "allowed_sources": [
+        "fetch"
+       ],
+       "interaction_required": false,
+       "stages": [
+        "GATHER",
+        "FILTER",
+        "EXTRACT"
+       ]
+      }
+     },
+     "task_id": "order-desk"
+    },
+    "grammar": {
+     "grammar_hash": "0f3281942b8713c7d2108b214cc4c259d2519c8eb24b59d12364cfc1e77c54ac",
+     "stage_kinds": [
+      "GATHER",
+      "FILTER",
+      "EXTRACT"
+     ],
+     "version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]"
+    },
+    "lineage_id": "order-desk.order-desk",
+    "model": {
+     "config_hash": "03eaf8df3322de0c89a61296e073e193e06f061bc0f687457bfe9ac34ebb4106",
+     "configuration": {
+      "model": "dogfood-desk-model",
+      "parameters": {},
+      "provider": "openai_compatible"
+     },
+     "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+     "registry_entry": {
+      "adapter": "openai_compatible",
+      "capabilities": [
+       "structured_output",
+       "text_generation"
+      ],
+      "context_window": null,
+      "enabled": true,
+      "endpoint": "http://127.0.0.1:1975/v1",
+      "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+      "model_id": "dogfood-desk-model",
+      "name": "dogfood-desk",
+      "pricing": {
+       "completion_per_million": 2.0,
+       "currency": "USD",
+       "prompt_per_million": 1.0,
+       "version": "dogfood-2026-10"
+      },
+      "provider": "openai_compatible",
+      "retry": {
+       "backoff_s": 2.0,
+       "max_delay_s": 60.0,
+       "max_retries": 0
+      },
+      "revision": "2026-10-01",
+      "timeout": {
+       "request_timeout_s": 10.0
+      }
+     },
+     "registry_entry_hash": "fa3fbe94e6bfc59e2baeae4feb4bd2f3d7f68700b85d620f62b2ae71862d7180"
+    },
+    "provenance": {
+     "artifact_id": "15ef598bafe40fee1bad5c977b9e3f4b31768cc9cf9cc5616dfeac3e250983ae",
+     "definition_hash": "e6b90742842d6674cdfde6db98a11cd692d60961c7765eba029af0232dbe0fc4",
+     "experiment_id": "4b2faad550fffe39bf57b782a71b66ebe86e8a620d633773c5f8189c4e02fa90",
+     "experiment_sha256": "4fe6d09169b9d930fa8b01ea3bbc41de1018f1eadef48408995f83cac53de566",
+     "job_id": "j-91c5aea377ff472989a60593",
+     "optimizer": "random_search_distinct",
+     "optimizer_version": "random_distinct/1",
+     "provenance_id": "54b2de4a369b0be9d567c8f353ed06c6c5c5ecd0a164db419193e5ecb74e8917",
+     "run_id": "e704ae12b14ee9c20e10440b79054eeb26f5f2353c2229fa3a460aabbdf92dc0",
+     "seed": 0,
+     "strategy": "random"
+    },
+    "schema": "wynk-workflow-version/1",
+    "synthetic": false,
+    "versions": {
+     "benchmark_hash": "inline",
+     "compiler_version": "maf/compiler/1",
+     "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+     "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+     "prompt_template_version": "mvp-3"
+    },
+    "workflow": {
+     "genome": {
+      "schema": "genome/1",
+      "stages": [
+       {
+        "kind": "GATHER",
+        "mode": "parallel-4",
+        "source": "fetch"
+       },
+       {
+        "kind": "FILTER",
+        "method": "keyword_chunk"
+       },
+       {
+        "kind": "EXTRACT",
+        "method": "schema_guided"
+       }
+      ]
+     },
+     "genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3"
+    }
+   }
+  }
+ },
+ "list_workflows": {
+  "status": 200,
+  "body": {
+   "versions": [
+    {
+     "version_id": "wv-56d814bbc773d80384fea8d5",
+     "lineage_id": "order-desk.order-desk",
+     "champion_id": "c-16cf524b47f31f4e2160aef5",
+     "state": "CREATED",
+     "created_at": "2026-10-31T19:48:54.802+00:00",
+     "state_updated_at": "2026-10-31T19:48:54.802+00:00",
+     "document": {
+      "champion": {
+       "champion_id": "c-16cf524b47f31f4e2160aef5",
+       "champion_version": 1,
+       "compat_hash": "5028340e13d2d5c8f33fe0ff6ab1e46b7b2702d2c75e9182304c2aaf9f14c6d4",
+       "decision_hash": "f4436aa392cf7445a304cd25ee178edb00bc9a205de55fd0f09765db67b3375c",
+       "promotion_id": "p-815cf47694377efce6abff46",
+       "record_sha256": "026b93d6701d7e7a7eec680cf907be4613c196070bf5c9ffe5fe8ea09b2cf64f"
+      },
+      "contract": {
+       "contract_hash": "18d4a33811e1cf756371e7e6e1b4ab6b72c6e54c88a7adce72b8b6933aed1580",
+       "contract_version": 1,
+       "input_schema": {
+        "fields": [
+         {
+          "name": "question",
+          "required": true,
+          "type": "string"
+         },
+         {
+          "name": "order_record",
+          "required": true,
+          "type": "string"
+         }
+        ]
+       },
+       "output_schema": {
+        "fields": [
+         {
+          "name": "answer",
+          "required": true,
+          "type": "string"
+         }
+        ]
+       },
+       "task_contract": {
+        "constraints": {
+         "maximum_cost_per_example": null,
+         "maximum_mean_latency_s": null,
+         "maximum_model_calls": 4,
+         "maximum_p95_latency_s": null,
+         "maximum_retries": 2,
+         "maximum_tokens_per_example": 20000,
+         "maximum_tool_calls": 20,
+         "maximum_wall_time_s": 120.0,
+         "maximum_workflow_steps": null,
+         "minimum_quality": null
+        },
+        "contract_version": 1,
+        "dataset": {
+         "columns": [
+          {
+           "name": "ticket_id",
+           "nullable": false,
+           "type": "string"
+          },
+          {
+           "name": "question",
+           "nullable": false,
+           "type": "string"
+          },
+          {
+           "name": "order_record",
+           "nullable": false,
+           "type": "string"
+          }
+         ],
+         "content_hash": "5da878fdf441c82dd76e2863ae9855fc5580f140718dfd74eb1f75800a11a9df",
+         "context_columns": [
+          "order_record"
+         ],
+         "dataset_id": "order-desk",
+         "dataset_version": 1,
+         "format": "csv",
+         "id_column": "ticket_id",
+         "input_columns": [
+          "question"
+         ],
+         "metadata": {
+          "row_ids": "column"
+         },
+         "name": "Order desk",
+         "row_count": 18,
+         "schema_version": "datasetspec/1",
+         "target_columns": [
+          "answer"
+         ]
+        },
+        "evaluation": {
+         "config": {
+          "case_sensitive": false,
+          "normalize_whitespace": false
+         },
+         "evaluator": "exact_match",
+         "evaluator_version": "exact_match/1",
+         "schema_version": "evaluationspec/1"
+        },
+        "input_schema": {
+         "fields": [
+          {
+           "name": "question",
+           "required": true,
+           "type": "string"
+          },
+          {
+           "name": "order_record",
+           "required": true,
+           "type": "string"
+          }
+         ]
+        },
+        "instructions": "Name the destination city of the order, using only the order record.",
+        "objective": {
+         "mode": "maximize_quality",
+         "scales": {},
+         "schema_version": "objectivespec/1",
+         "weights": {}
+        },
+        "output_schema": {
+         "fields": [
+          {
+           "name": "answer",
+           "required": true,
+           "type": "string"
+          }
+         ]
+        },
+        "schema_version": "taskcontract/1",
+        "task_id": "order-desk",
+        "task_type": "question_answering",
+        "workflow": {
+         "allowed_sources": [
+          "fetch"
+         ],
+         "interaction_required": false,
+         "stages": [
+          "GATHER",
+          "FILTER",
+          "EXTRACT"
+         ]
+        }
+       },
+       "task_id": "order-desk"
+      },
+      "grammar": {
+       "grammar_hash": "0f3281942b8713c7d2108b214cc4c259d2519c8eb24b59d12364cfc1e77c54ac",
+       "stage_kinds": [
+        "GATHER",
+        "FILTER",
+        "EXTRACT"
+       ],
+       "version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]"
+      },
+      "lineage_id": "order-desk.order-desk",
+      "model": {
+       "config_hash": "03eaf8df3322de0c89a61296e073e193e06f061bc0f687457bfe9ac34ebb4106",
+       "configuration": {
+        "model": "dogfood-desk-model",
+        "parameters": {},
+        "provider": "openai_compatible"
+       },
+       "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+       "registry_entry": {
+        "adapter": "openai_compatible",
+        "capabilities": [
+         "structured_output",
+         "text_generation"
+        ],
+        "context_window": null,
+        "enabled": true,
+        "endpoint": "http://127.0.0.1:1975/v1",
+        "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+        "model_id": "dogfood-desk-model",
+        "name": "dogfood-desk",
+        "pricing": {
+         "completion_per_million": 2.0,
+         "currency": "USD",
+         "prompt_per_million": 1.0,
+         "version": "dogfood-2026-10"
+        },
+        "provider": "openai_compatible",
+        "retry": {
+         "backoff_s": 2.0,
+         "max_delay_s": 60.0,
+         "max_retries": 0
+        },
+        "revision": "2026-10-01",
+        "timeout": {
+         "request_timeout_s": 10.0
+        }
+       },
+       "registry_entry_hash": "fa3fbe94e6bfc59e2baeae4feb4bd2f3d7f68700b85d620f62b2ae71862d7180"
+      },
+      "provenance": {
+       "artifact_id": "15ef598bafe40fee1bad5c977b9e3f4b31768cc9cf9cc5616dfeac3e250983ae",
+       "definition_hash": "e6b90742842d6674cdfde6db98a11cd692d60961c7765eba029af0232dbe0fc4",
+       "experiment_id": "4b2faad550fffe39bf57b782a71b66ebe86e8a620d633773c5f8189c4e02fa90",
+       "experiment_sha256": "4fe6d09169b9d930fa8b01ea3bbc41de1018f1eadef48408995f83cac53de566",
+       "job_id": "j-91c5aea377ff472989a60593",
+       "optimizer": "random_search_distinct",
+       "optimizer_version": "random_distinct/1",
+       "provenance_id": "54b2de4a369b0be9d567c8f353ed06c6c5c5ecd0a164db419193e5ecb74e8917",
+       "run_id": "e704ae12b14ee9c20e10440b79054eeb26f5f2353c2229fa3a460aabbdf92dc0",
+       "seed": 0,
+       "strategy": "random"
+      },
+      "schema": "wynk-workflow-version/1",
+      "synthetic": false,
+      "versions": {
+       "benchmark_hash": "inline",
+       "compiler_version": "maf/compiler/1",
+       "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+       "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+       "prompt_template_version": "mvp-3"
+      },
+      "workflow": {
+       "genome": {
+        "schema": "genome/1",
+        "stages": [
+         {
+          "kind": "GATHER",
+          "mode": "parallel-4",
+          "source": "fetch"
+         },
+         {
+          "kind": "FILTER",
+          "method": "keyword_chunk"
+         },
+         {
+          "kind": "EXTRACT",
+          "method": "schema_guided"
+         }
+        ]
+       },
+       "genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3"
+      }
+     }
+    }
+   ]
+  }
+ },
+ "get_deployment": {
+  "status": 200,
+  "body": {
+   "lineage_id": "order-desk.order-desk",
+   "revision": 0,
+   "staging_version_id": null,
+   "production_version_id": null,
+   "created_at": "2026-10-31T19:48:54.802+00:00",
+   "updated_at": "2026-10-31T19:48:54.802+00:00"
+  }
+ },
+ "stage_workflow": {
+  "status": 200,
+  "body": {
+   "lineage_id": "order-desk.order-desk",
+   "revision": 1,
+   "staging_version_id": "wv-56d814bbc773d80384fea8d5",
+   "production_version_id": null,
+   "created_at": "2026-10-31T19:48:54.802+00:00",
+   "updated_at": "2026-10-31T19:48:54.857+00:00"
+  }
+ },
+ "error_stale_deployment": {
+  "status": 409,
+  "body": {
+   "error": {
+    "code": "stale_deployment",
+    "message": "lineage order-desk.order-desk is at revision 1; this change was made against revision 0",
+    "details": {}
+   }
+  }
+ },
+ "promote_workflow": {
+  "status": 200,
+  "body": {
+   "lineage_id": "order-desk.order-desk",
+   "revision": 2,
+   "staging_version_id": null,
+   "production_version_id": "wv-56d814bbc773d80384fea8d5",
+   "created_at": "2026-10-31T19:48:54.802+00:00",
+   "updated_at": "2026-10-31T19:48:54.909+00:00"
+  }
+ },
+ "get_deployment_history": {
+  "status": 200,
+  "body": {
+   "lineage_id": "order-desk.order-desk",
+   "revision": 2,
+   "staging_version_id": null,
+   "production_version_id": "wv-56d814bbc773d80384fea8d5",
+   "events": [
+    {
+     "seq": 1,
+     "action": "publish",
+     "version_id": "wv-56d814bbc773d80384fea8d5",
+     "replaced_version_id": null,
+     "revision_before": 0,
+     "revision_after": 0,
+     "actor": "api",
+     "created_at": "2026-10-31T19:48:54.802+00:00"
+    },
+    {
+     "seq": 2,
+     "action": "stage",
+     "version_id": "wv-56d814bbc773d80384fea8d5",
+     "replaced_version_id": null,
+     "revision_before": 0,
+     "revision_after": 1,
+     "actor": "api",
+     "created_at": "2026-10-31T19:48:54.857+00:00"
+    },
+    {
+     "seq": 3,
+     "action": "promote",
+     "version_id": "wv-56d814bbc773d80384fea8d5",
+     "replaced_version_id": null,
+     "revision_before": 1,
+     "revision_after": 2,
+     "actor": "api",
+     "created_at": "2026-10-31T19:48:54.909+00:00"
+    }
+   ]
+  }
+ },
+ "invoke_production": {
+  "status": 200,
+  "body": {
+   "record_schema": "wynk-inference/1",
+   "inference_id": "inf-9d09cc1bd6f1e24ada1f0eb8",
+   "status": "SUCCEEDED",
+   "workflow_version": "wv-56d814bbc773d80384fea8d5",
+   "lineage_id": "order-desk.order-desk",
+   "addressed_by": "production",
+   "deployment_revision": 2,
+   "champion_id": "c-16cf524b47f31f4e2160aef5",
+   "genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+   "provenance": {
+    "promotion_id": "p-815cf47694377efce6abff46",
+    "artifact_id": "15ef598bafe40fee1bad5c977b9e3f4b31768cc9cf9cc5616dfeac3e250983ae",
+    "provenance_id": "54b2de4a369b0be9d567c8f353ed06c6c5c5ecd0a164db419193e5ecb74e8917",
+    "experiment_id": "4b2faad550fffe39bf57b782a71b66ebe86e8a620d633773c5f8189c4e02fa90",
+    "job_id": "j-91c5aea377ff472989a60593",
+    "run_id": "e704ae12b14ee9c20e10440b79054eeb26f5f2353c2229fa3a460aabbdf92dc0",
+    "strategy": "random",
+    "seed": 0
+   },
+   "model": {
+    "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+    "registry_entry_hash": "fa3fbe94e6bfc59e2baeae4feb4bd2f3d7f68700b85d620f62b2ae71862d7180",
+    "name": "dogfood-desk"
+   },
+   "versions": {
+    "benchmark_hash": "inline",
+    "compiler_version": "maf/compiler/1",
+    "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+    "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+    "prompt_template_version": "mvp-3"
+   },
+   "run_id": "06eb38461ecd42c70cdf1c481d06824f8e5cf704a5e7e6f02e63bcc18a9565cb",
+   "request_sha256": "69cf365ce74220169abd214cca25f6d8f30a3cc108db6ba4521d13c393efb3dc",
+   "output": {
+    "answer": "Lincoln"
+   },
+   "output_sha256": "698d475afa52afc5e2a7b4d12209684b1f08195837ecee32c88bc06f0e813a67",
+   "failure": null,
+   "usage": {
+    "model_calls": 2,
+    "prompt_tokens": 80,
+    "completion_tokens": 16,
+    "total_tokens": 96,
+    "latency_s": 0.029448,
+    "cost": 0.000112,
+    "cost_authoritative": true
+   },
+   "authenticated_principal": {
+    "workspace_id": "ws-459dd3935f9b599d1cbb",
+    "user_id": "usr-ff6935649375af5dae58",
+    "key_id": "9ef204c58121aa6f",
+    "authenticated_by": "api_key"
+   },
+   "created_at": "2026-10-31T19:48:55.065+00:00"
+  }
+ },
+ "invoke_production_replay": {
+  "status": 200,
+  "body": {
+   "record_schema": "wynk-inference/1",
+   "inference_id": "inf-9d09cc1bd6f1e24ada1f0eb8",
+   "status": "SUCCEEDED",
+   "workflow_version": "wv-56d814bbc773d80384fea8d5",
+   "lineage_id": "order-desk.order-desk",
+   "addressed_by": "production",
+   "deployment_revision": 2,
+   "champion_id": "c-16cf524b47f31f4e2160aef5",
+   "genome_hash": "1ac9b3cd86b3163ea6c150b4a6f3391f00d1c9175d990292319d6a57055d60b3",
+   "provenance": {
+    "artifact_id": "15ef598bafe40fee1bad5c977b9e3f4b31768cc9cf9cc5616dfeac3e250983ae",
+    "experiment_id": "4b2faad550fffe39bf57b782a71b66ebe86e8a620d633773c5f8189c4e02fa90",
+    "job_id": "j-91c5aea377ff472989a60593",
+    "promotion_id": "p-815cf47694377efce6abff46",
+    "provenance_id": "54b2de4a369b0be9d567c8f353ed06c6c5c5ecd0a164db419193e5ecb74e8917",
+    "run_id": "e704ae12b14ee9c20e10440b79054eeb26f5f2353c2229fa3a460aabbdf92dc0",
+    "seed": 0,
+    "strategy": "random"
+   },
+   "model": {
+    "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+    "name": "dogfood-desk",
+    "registry_entry_hash": "fa3fbe94e6bfc59e2baeae4feb4bd2f3d7f68700b85d620f62b2ae71862d7180"
+   },
+   "versions": {
+    "benchmark_hash": "inline",
+    "compiler_version": "maf/compiler/1",
+    "grammar_version": "grammar/2[GATHER,FILTER,EXTRACT,REASON,VERIFY,SYNTHESIZE,DIRECT,CONFIDENCE_GATE]",
+    "model_hash": "13eabc030b8c87f33841b86ae6839f8f07e1c5e8ebb99da2c9732e3ae1a183f8",
+    "prompt_template_version": "mvp-3"
+   },
+   "run_id": "06eb38461ecd42c70cdf1c481d06824f8e5cf704a5e7e6f02e63bcc18a9565cb",
+   "request_sha256": "69cf365ce74220169abd214cca25f6d8f30a3cc108db6ba4521d13c393efb3dc",
+   "output": {
+    "answer": "Lincoln"
+   },
+   "output_sha256": "698d475afa52afc5e2a7b4d12209684b1f08195837ecee32c88bc06f0e813a67",
+   "failure": null,
+   "usage": {
+    "model_calls": 2,
+    "prompt_tokens": 80,
+    "completion_tokens": 16,
+    "total_tokens": 96,
+    "latency_s": 0.029448,
+    "cost": 0.000112,
+    "cost_authoritative": true
+   },
+   "authenticated_principal": {
+    "authenticated_by": "api_key",
+    "key_id": "9ef204c58121aa6f",
+    "user_id": "usr-ff6935649375af5dae58",
+    "workspace_id": "ws-459dd3935f9b599d1cbb"
+   },
+   "created_at": "2026-10-31T19:48:55.065+00:00"
+  }
+ },
+ "error_idempotency_conflict": {
+  "status": 409,
+  "body": {
+   "error": {
+    "code": "idempotency_conflict",
+    "message": "this Idempotency-Key was already used for a different request",
+    "details": {}
+   }
+  }
+ },
+ "error_invalid_inference_request": {
+  "status": 422,
+  "body": {
+   "error": {
+    "code": "invalid_inference_request",
+    "message": "inputs.order_record: missing",
+    "details": {
+     "field": "inputs.order_record",
+     "problems": 2,
+     "inference_id": "inf-bc733093a57e75e16e1fe744",
+     "failure_kind": "input_schema_invalid"
+    }
+   }
+  }
+ },
+ "current_workspace": {
+  "status": 200,
+  "body": {
+   "workspace": {
+    "workspace_id": "ws-459dd3935f9b599d1cbb",
+    "name": "Fixture",
+    "created_by": "usr-ff6935649375af5dae58",
+    "created_at": "2026-10-31T19:48:46.642+00:00"
+   },
+   "principal": {
+    "user_id": "usr-ff6935649375af5dae58",
+    "key_id": "9ef204c58121aa6f",
+    "role": "OWNER",
+    "scopes": [
+     "read",
+     "write",
+     "invoke"
+    ]
+   }
+  }
+ },
+ "get_quota": {
+  "status": 200,
+  "body": {
+   "workspace_id": "ws-459dd3935f9b599d1cbb",
+   "limits": {
+    "projects": 50,
+    "uploads": 500,
+    "stored_bytes": 1073741824,
+    "dataset_versions": 500,
+    "active_jobs": 4,
+    "workflow_versions": 200,
+    "api_keys": 50
+   },
+   "usage": {
+    "projects": 1,
+    "uploads": 1,
+    "stored_bytes": 3130,
+    "dataset_versions": 1,
+    "active_jobs": 0,
+    "workflow_versions": 1,
+    "api_keys": 1
+   }
+  }
+ },
+ "new_order": {
+  "question": "Which city does order ORD-2001 ship to?",
+  "order_record": "Order ORD-2001 (1 x tarp) was packed at the Reno warehouse and ships to Lincoln by Ground on 2026-04-01."
+ }
+}
