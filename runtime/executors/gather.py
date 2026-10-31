@@ -99,7 +99,9 @@ class GatherExecutor(StageExecutor):
             if self._websearch is None:
                 return _fail(inp, "gather source 'websearch' is not available")
             if self._websearch.drifted():  # nothing is sent or charged
-                return _fail(inp, DRIFTED.format(source="websearch"), kind=FailureKind.PROVIDER_DRIFTED)
+                return _fail(
+                    inp, DRIFTED.format(source="websearch"), kind=FailureKind.PROVIDER_DRIFTED
+                )
             return await _websearch(inp, ctx, self._websearch)
         source = ctx.task.source
         if isinstance(source, InlineSource):
