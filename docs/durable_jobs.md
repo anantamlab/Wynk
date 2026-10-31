@@ -181,8 +181,8 @@ A client that loses the response to a create can retry it safely. It sends the s
 digit; a UUID works) on the first request and on every retry.
 
 * **Same workspace, same key, canonically same body** (JSON key order, whitespace and explicit
-  defaults do not matter): the response is the job the first request created, as the same 201
-  job body, plus the header `Idempotent-Replayed: true`. The job is only read: no job, unit or
+  defaults do not matter): the response is the **current view of the original job** (which may
+  have advanced since creation), with status 201 and the header `Idempotent-Replayed: true`. The job is only read: no job, unit or
   quota admission is added, the runtime is not bound, no model is called, and the retry does
   not need the dataset source any more.
 * **Same workspace, same key, different body:** 409 `idempotency_conflict`. Nothing is created,
