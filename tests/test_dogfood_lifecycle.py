@@ -1097,7 +1097,9 @@ def test_websearch_drift_between_preflight_and_search_is_not_scored(
     assert drifted[0] and (view["state"], view["reason"]) == (
         "INTERRUPTED", "runtime_unavailable"
     ), view
-    assert not brave.requests and len(provider.requests) == start
+    assert not brave.requests  # no websearch request was sent after the provider drift
+    # ACO may have completed unrelated DIRECT runs before reaching the websearch candidate.
+    assert len(provider.requests) >= start
 
     store = w.api(ws).jobs.store
     attempts = [
@@ -1105,10 +1107,11 @@ def test_websearch_drift_between_preflight_and_search_is_not_scored(
         for u in store.get_job(job["job_id"]).units
         for a in store.attempts(u.job_id, u.strategy, u.seed)
     ]
-    assert len(attempts) == 1
-    assert attempts[0].state.value == "ERRORED"
-    assert attempts[0].resolution == "provider_drift_refused"
-    assert attempts[0].result_json is None and attempts[0].entry_json is None
+    refused = [a for a in attempts if a.resolution == "provider_drift_refused"]
+    assert len(refused) == 1
+    assert refused[0].state.value == "ERRORED"
+    assert refused[0].result_json is None and refused[0].entry_json is None
+    assert all(a.state.value == "COMPLETED" for a in attempts if a not in refused)
 
     w.source.config = original
     w.ok(key, "POST", f"experiments/{job['job_id']}/resume")
