@@ -683,7 +683,7 @@ class DurableEvaluate:
             # never silently re-send potentially billed work or treat it as a score.
             usage = run.execution.budget_usage
             metrics = run.execution.metrics
-            if usage.tool_calls or usage.model_calls or metrics.model_calls:
+            if usage.tool_calls or usage.tokens or usage.retries or metrics.model_calls:
                 raise AmbiguousAttempt(
                     "provider drift after charged work; attempt spend must be resolved"
                 )
