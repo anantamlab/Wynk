@@ -61,7 +61,7 @@ refusal sends nothing, so it measures nothing, but it was scored.
 
 1. Trigger: a new attempt of a genome with a websearch GATHER while the pinned provider reports
    another identity or result count (`WorkflowRunner.check_evidence`).
-2. Layer: `DurableEvaluate`, before `start_attempt` (via `JobBinding.preflight`).
+2. Layer: `DurableEvaluate` before `start_attempt` (via `JobBinding.preflight`); a later refusal is identified by the typed `provider_drifted` result and blocked before scoring.
 3. State: unit INTERRUPTED, reason `runtime_unavailable`; job INTERRUPTED. The cached binding
    is dropped.
 4. Resume: `POST experiments/{id}/resume` (explicit, as for every `runtime_unavailable`).
@@ -72,8 +72,7 @@ refusal sends nothing, so it measures nothing, but it was scored.
 8. Optimizer state: nothing refused is observed; replay reproduces the stored states exactly.
 9. Spend: committed spend stays committed; the open candidate's completed rows are reused, so
    no search or model call is sent twice.
-10. Provenance: no refused row is stored; the unit's `detail` says the provider drifted. The
-    resumed artifact equals an undisturbed job's.
+10. Provenance: no attempt row is written for a preflight refusal; a refusal after `start_attempt` leaves an unscored `ERRORED` audit row with `resolution=provider_drift_refused`. Replay skips it using a new attempt ID. The unit detail identifies the drift; the resumed scored artifact matches the undisturbed job.
 
 ## 6. JEV
 
@@ -85,8 +84,7 @@ JEV needs a `drifted()` probe on `PinnedJevSource` to join it.
 
 ## 7. Residuals
 
-* A drift that lands inside one run (after the preflight, or before a `regather`) is still
-  refused by the executor and stored as a failed row (never sent, never charged).
+* A drift after preflight is typed `provider_drifted`, leaves no scored result, and can be retried on resume because zero external calls were made. If a refusal cannot prove zero spend, the attempt remains ambiguous and must not be re-sent. Websearch regather is structurally inadmissible.
 * `PinnedWebSearchSource.search` checks `drifted()` and then the Brave adapter reads
   `self.config` again; a config swap between the two would send to the new endpoint. No
   production code swaps the config (it is frozen and built once per process). Pre-existing.
