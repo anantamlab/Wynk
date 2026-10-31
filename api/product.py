@@ -81,8 +81,8 @@ key format, workspace scope and ``idempotency_conflict``. Its key is bound - bef
 request - to ONE invocation and to the version (and revision) the first request resolved, so a
 retry never runs a version promoted or rolled back later, and never makes a second provider
 request for that invocation. A retry gets the invocation's current state with
-``Idempotent-Replayed: true``: SUCCEEDED -> the stored inference (200; its output is not
-stored, ``output`` is ``null`` and ``output_sha256`` identifies it); FAILED -> the original error
+``Idempotent-Replayed: true``: SUCCEEDED -> the same response (200), ``output`` included (sealed
+at rest under the workspace data key; the record keeps its hash only); FAILED -> the original error
 and inference id; still running -> ``inference_in_progress``; its process died after a provider
 request may have been sent -> ``inference_ambiguous_attempt``, never re-sent; its process died
 before any request -> resumed exactly once on the bound version, or
