@@ -150,7 +150,7 @@ Every executed invocation appends an immutable `inference_records` row (`wynk-in
 | `provenance` | `artifact_id`, `provenance_id`, `experiment_id`, `job_id`, `promotion_id`, `run_id`, `strategy`, `seed` |
 | `model` | `model_hash`, `registry_entry_hash`, entry name |
 | `versions` | model / prompt / compiler / grammar / benchmark versions, plus the exact live websearch `evidence_source` when used |
-| `run_id`, `request_sha256`, `output_sha256`, `failure` | the run; inputs and output are kept as hashes only |
+| `run_id`, `request_sha256`, `output_sha256`, `failure` | the run; inputs and output are kept as hashes only (an `Idempotency-Key` invocation also seals its output for its retries, below) |
 | `usage` | measured `model_calls`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `latency_s`; `cost` only when the pinned registry entry has prices (`cost_authoritative`) |
 
 `GET /api/v1/inferences/{inference_id}` returns the record (without the output). Monitoring, drift
@@ -187,7 +187,7 @@ never makes a second provider request for that invocation:
 
 | state | retry response |
 | --- | --- |
-| `SUCCEEDED` | `200`, the stored inference record (the output is not stored: `output` is `null`, `output_sha256` identifies it) |
+| `SUCCEEDED` | `200`, the same response as the first one, `output` included (opened from its sealed copy, below) |
 | `FAILED` | the original error (`422` / `502`) with the same `details.inference_id` |
 | `RESERVED` / `STARTED`, owner alive | `409 inference_in_progress` (`details.state`, `details.inference_id`); nothing starts |
 | `STARTED`, owner dead | `409 inference_ambiguous_attempt` (state `AMBIGUOUS`). A request may have reached the provider. It is never re-sent. |
@@ -200,6 +200,33 @@ while it still runs records its measured outcome when it finishes (`AMBIGUOUS â†
 FAILED`). Nothing else resolves an ambiguous invocation. To pay for a new attempt, the client
 sends a new key. Monitoring reads `inference_records` only, so a replay adds no record, usage or
 cost.
+
+**The crash boundary.** `STARTED` is committed (`synchronous=FULL`, its own transaction) before
+the first model or websearch request leaves the process; the gated client and search source are
+the only paths a deployed version has to a provider. A process that dies before that commit sent
+nothing: its `RESERVED` invocation is resumed once. One that dies after it is `AMBIGUOUS`, even
+if it died before its request left: no process can prove that, so it is never re-sent. A failed
+start commit (a database error) sends nothing and finishes the invocation `FAILED`.
+
+**Deployment changes.** A finished invocation replays from its own stored state, whatever was
+promoted, replaced or rolled back since (by production or by version). A `RESERVED` one is
+resumed only on the version it bound and only while that version still serves its address:
+`STAGING` / `PRODUCTION` for a version address, `PRODUCTION` for the lineage address. The check
+is part of the take-over compare-and-set, so a deployment write racing the retry cannot slip
+between them. Otherwise it is `ABANDONED` (`409 inference_deployment_changed`).
+
+**The stored output.** Only a `SUCCEEDED` `Idempotency-Key` invocation keeps its output, for its
+retries (`inference_outputs`). It is never plaintext at rest: an AES-256-GCM envelope under the
+workspace's #33 data key, whose associated data binds the workspace and the output's sha256.
+It is written in the finishing transaction (a `SUCCEEDED` invocation without one is refused by
+trigger). A replay authenticates it and re-hashes it against the record's `output_sha256`;
+anything else is `500 storage_error`, and nothing is re-run. Only a caller with `invoke` scope
+in the same workspace, the same key and the same request gets it. `GET /inferences/{id}`,
+monitoring and keyless invocations still keep the hash only. Key rotation:
+`python -m api.tenancy secure-data` re-seals these outputs under the active key too
+(`inference_outputs_rekeyed`); retire the old key only after that. Without a keyring the
+process refuses keyed invocations (`503 inference_backend_unavailable`) before binding anything.
+Like the keys (#60), stored outputs have no expiry yet.
 
 The provider offers no request deduplication. So this is at most one provider execution per key
 *from Wynk*, not exactly-once at the provider: a provider can still receive a request whose
@@ -242,4 +269,7 @@ fake provider that counts every HTTP request): replay and conflict, canonical bo
 rejected replays, malformed keys, quotas, workspace isolation, authorization, threads and
 independent processes, crashes before / during / after execution and before the outcome is
 stored, restarts, in-progress and ambiguous states and their resolution, promotion / rollback /
-staging between requests, and monitoring totals.
+staging between requests, and monitoring totals; the sealed replay output (at rest, tampering,
+key rotation), `STARTED` observed at the far end of the model and search connections, crashes
+and errors around the start commit, concurrent recovery, a fenced stalled owner, a promotion
+racing a takeover, and conflicting payloads in every state and under concurrency.

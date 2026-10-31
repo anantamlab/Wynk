@@ -14,7 +14,7 @@ import io
 import json
 import re
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -58,6 +58,9 @@ class FakeProvider:
     status: int = 200
     requests: list[dict[str, Any]] = field(default_factory=list)
     authorizations: list[str | None] = field(default_factory=list)
+    # called with each request body the moment it arrives, before the reply (crash-boundary
+    # tests observe the caller's database state at the far end of the connection)
+    on_request: Callable[[dict[str, Any]], None] | None = None
     _server: ThreadingHTTPServer | None = None
 
     @property
@@ -73,6 +76,8 @@ class FakeProvider:
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 provider.requests.append(body)
                 provider.authorizations.append(self.headers.get("Authorization"))
+                if provider.on_request is not None:
+                    provider.on_request(body)
                 if provider.status != 200:
                     return self._send(provider.status, {"error": {"message": "unavailable"}})
                 if self.headers.get("Authorization") != f"Bearer {provider.key}":

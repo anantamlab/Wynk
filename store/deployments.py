@@ -28,6 +28,13 @@ Records
                         never change and the state only moves along the machine below
                         (trigger). A SUCCEEDED / FAILED invocation always has its inference
                         record, committed in the same transaction (trigger).
+    inference_outputs   the output of a SUCCEEDED ``Idempotency-Key`` invocation, so a retry
+                        gets the same answer without a second provider request. Only an
+                        AES-256-GCM envelope (``store.crypto``, the workspace's data key; the
+                        associated data binds the workspace and the output's sha256) is stored,
+                        never plaintext. Written in the finishing transaction (a SUCCEEDED
+                        invocation without one is refused by trigger); never deleted; only the
+                        envelope may be replaced (key rotation, ``rekey_outputs``).
 
 Invocation state (``InvocationState``)
 
@@ -327,6 +334,33 @@ SCHEMA: tuple[str, ...] = (
     """CREATE TRIGGER IF NOT EXISTS inference_invocations_are_permanent
     BEFORE DELETE ON inference_invocations
     BEGIN SELECT RAISE(ABORT, 'an idempotency key is bound once'); END""",
+    # -- the sealed output of a SUCCEEDED keyed invocation (a retry returns it) ----------------
+    """CREATE TABLE IF NOT EXISTS inference_outputs (
+        inference_id   TEXT PRIMARY KEY REFERENCES inference_invocations(inference_id),
+        output_sha256  TEXT NOT NULL,           -- canonical hash of the output (= its record's)
+        envelope       BLOB NOT NULL,           -- store.crypto envelope; never plaintext
+        created_at     TEXT NOT NULL
+    )""",
+    """CREATE TRIGGER IF NOT EXISTS inference_outputs_are_written_by_the_finish
+    BEFORE INSERT ON inference_outputs
+    WHEN NOT EXISTS (SELECT 1 FROM inference_invocations WHERE inference_id = NEW.inference_id
+                     AND state IN ('RESERVED', 'STARTED', 'AMBIGUOUS'))
+      OR substr(NEW.envelope, 1, 8) IS NOT CAST('WYNKBLOB' AS BLOB)
+    BEGIN SELECT RAISE(ABORT, 'an output is sealed by its invocation''s finish'); END""",
+    """CREATE TRIGGER IF NOT EXISTS inference_outputs_keep_their_identity
+    BEFORE UPDATE ON inference_outputs
+    WHEN NEW.inference_id IS NOT OLD.inference_id OR NEW.output_sha256 IS NOT OLD.output_sha256
+      OR NEW.created_at IS NOT OLD.created_at
+      OR substr(NEW.envelope, 1, 8) IS NOT CAST('WYNKBLOB' AS BLOB)
+    BEGIN SELECT RAISE(ABORT, 'only an output''s envelope is re-keyed'); END""",
+    """CREATE TRIGGER IF NOT EXISTS inference_outputs_are_permanent
+    BEFORE DELETE ON inference_outputs
+    BEGIN SELECT RAISE(ABORT, 'a stored output is permanent'); END""",
+    """CREATE TRIGGER IF NOT EXISTS inference_invocations_succeed_with_their_output
+    BEFORE UPDATE ON inference_invocations
+    WHEN NEW.state = 'SUCCEEDED' AND OLD.state IS NOT 'SUCCEEDED' AND NOT EXISTS (
+        SELECT 1 FROM inference_outputs WHERE inference_id = NEW.inference_id)
+    BEGIN SELECT RAISE(ABORT, 'a succeeded invocation has its sealed output'); END""",
 )
 
 _VERSION_COLS = (
@@ -781,23 +815,48 @@ class SQLiteDeploymentStore:
             (lease_expires_at, self.clock(), inference_id, owner),
         )
 
+    @staticmethod
+    def _serving(states: frozenset[VersionState]) -> tuple[str, tuple[str, ...]]:
+        """SQL: the invocation's bound version is in one of ``states`` (checked in the CAS's own
+        transaction, so no deployment write can slip between the check and the move)."""
+        names = tuple(sorted(s.value for s in states))
+        sql = (
+            "EXISTS (SELECT 1 FROM version_states s WHERE s.version_id = "
+            f"inference_invocations.version_id AND s.state IN ({','.join('?' * len(names))}))"
+        )
+        return sql, names
+
     def take_over_invocation(
-        self, inference_id: str, owner: str, new_owner: str, now_s: float, lease_expires_at: float
+        self,
+        inference_id: str,
+        owner: str,
+        new_owner: str,
+        now_s: float,
+        lease_expires_at: float,
+        serving: frozenset[VersionState],
     ) -> bool:
-        """A dead owner's RESERVED invocation (its lease expired at ``now_s``) -> ``new_owner``.
-        Safe: the dead owner never won RESERVED -> STARTED, so it sent nothing."""
+        """A dead owner's RESERVED invocation (its lease expired at ``now_s``) -> ``new_owner``,
+        only while its bound version is still in ``serving``. Safe: the dead owner never won
+        RESERVED -> STARTED, so it sent nothing."""
+        check, names = self._serving(serving)
         return self._cas(
             "UPDATE inference_invocations SET owner=?, lease_expires_at=?, updated_at=? "
-            "WHERE inference_id=? AND owner=? AND state='RESERVED' AND lease_expires_at<=?",
-            (new_owner, lease_expires_at, self.clock(), inference_id, owner, now_s),
+            "WHERE inference_id=? AND owner=? AND state='RESERVED' AND lease_expires_at<=? "
+            f"AND {check}",
+            (new_owner, lease_expires_at, self.clock(), inference_id, owner, now_s, *names),
         )
 
-    def abandon_invocation(self, inference_id: str, owner: str, now_s: float) -> bool:
-        """A dead owner's RESERVED invocation -> ABANDONED (it can never run any more)."""
+    def abandon_invocation(
+        self, inference_id: str, owner: str, now_s: float, serving: frozenset[VersionState]
+    ) -> bool:
+        """A dead owner's RESERVED invocation -> ABANDONED (it can never run any more), only if
+        its bound version is no longer in ``serving``."""
+        check, names = self._serving(serving)
         return self._cas(
             "UPDATE inference_invocations SET state='ABANDONED', updated_at=? "
-            "WHERE inference_id=? AND owner=? AND state='RESERVED' AND lease_expires_at<=?",
-            (self.clock(), inference_id, owner, now_s),
+            "WHERE inference_id=? AND owner=? AND state='RESERVED' AND lease_expires_at<=? "
+            f"AND NOT {check}",
+            (self.clock(), inference_id, owner, now_s, *names),
         )
 
     def mark_ambiguous(self, inference_id: str, now_s: float) -> bool:
@@ -809,9 +868,15 @@ class SQLiteDeploymentStore:
         )
 
     def finish_invocation(
-        self, inference_id: str, owner: str, status: str, record_json: str
+        self,
+        inference_id: str,
+        owner: str,
+        status: str,
+        record_json: str,
+        output: tuple[str, bytes] | None = None,
     ) -> InferenceRow | None:
-        """The owner's measured outcome: the inference record and the invocation's terminal
+        """The owner's measured outcome: the inference record, the sealed ``output``
+        (``(output_sha256, envelope)``, required for SUCCEEDED) and the invocation's terminal
         state commit in ONE transaction. ``None`` (nothing written): ``owner`` does not own it
         (another process took the reservation over)."""
         now = self.clock()
@@ -829,6 +894,12 @@ class SQLiteDeploymentStore:
                 f"INSERT INTO inference_records({_INFERENCE_COLS}) VALUES (?,?,?,?,?,?)",
                 (inference_id, version_id, lineage_id, status, record_json, now),
             )
+            if output is not None:
+                c.execute(
+                    "INSERT INTO inference_outputs(inference_id, output_sha256, envelope, "
+                    "created_at) VALUES (?,?,?,?)",
+                    (inference_id, output[0], output[1], now),
+                )
             c.execute(
                 "UPDATE inference_invocations SET state=?, updated_at=? WHERE inference_id=?",
                 (status, now, inference_id),
@@ -836,6 +907,34 @@ class SQLiteDeploymentStore:
             return InferenceRow(inference_id, version_id, lineage_id, status, record_json, now)
 
         return self._tx(finish)  # type: ignore[no-any-return]
+
+    def invocation_output(self, inference_id: str) -> tuple[str, bytes] | None:
+        """``(output_sha256, envelope)`` of a SUCCEEDED keyed invocation of this store."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT output_sha256, envelope FROM inference_outputs WHERE inference_id=?",
+                (inference_id,),
+            ).fetchone()
+        return (row[0], bytes(row[1])) if row is not None else None
+
+    def rekey_outputs(self, reseal: Callable[[str, bytes], bytes | None]) -> int:
+        """Key rotation: ``reseal(output_sha256, envelope)`` returns the envelope under the
+        active key (``None``: already under it). Each replacement is a CAS on the old envelope,
+        so a concurrent rotation never loses one. Returns how many were re-keyed."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT inference_id, output_sha256, envelope FROM inference_outputs"
+            )
+            stored = [(r[0], r[1], bytes(r[2])) for r in rows]
+        moved = 0
+        for inference_id, sha, envelope in stored:
+            fresh = reseal(sha, envelope)
+            if fresh is not None and self._cas(
+                "UPDATE inference_outputs SET envelope=? WHERE inference_id=? AND envelope=?",
+                (fresh, inference_id, envelope),
+            ):
+                moved += 1
+        return moved
 
 
 def _invocation(r: tuple[Any, ...]) -> InvocationRow:

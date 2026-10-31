@@ -27,7 +27,9 @@ from typing import Any
 import pytest
 
 from api.product import ApiResponse
-from store.deployments import SQLiteDeploymentStore
+from core.canonical import canonical_json
+from store.crypto import DecryptionError
+from store.deployments import InvocationState, SQLiteDeploymentStore, VersionState
 from store.jobs import IdempotencyClaim
 from tests.conftest import TEST_DATA_KEYS
 from tests.dogfood_support import LINEAGE, FakeProvider, product
@@ -109,12 +111,14 @@ class Desk:
 
 
 @pytest.fixture
-def desk(tmp_path, template, shared_provider) -> Desk:
+def desk(tmp_path, template, shared_provider) -> Any:
     shutil.copytree(template["root"], tmp_path / "w")
     shared_provider.requests.clear()
     shared_provider.authorizations.clear()
     shared_provider.status = 200
-    return Desk(World(tmp_path / "w", shared_provider), template)
+    shared_provider.on_request = None
+    yield Desk(World(tmp_path / "w", shared_provider), template)
+    shared_provider.on_request = None
 
 
 def invoke(
@@ -196,7 +200,8 @@ def test_a_retry_after_a_lost_response_reuses_the_invocation_and_sends_nothing(d
         again = invoke(desk.w.r, desk.key, "retry-1")
         assert again.status == 200 and replayed(again)
         assert again.body["inference_id"] == first.body["inference_id"]
-        assert again.body["status"] == "SUCCEEDED" and again.body["output"] is None
+        assert again.body["status"] == "SUCCEEDED"
+        assert again.body["output"] == first.body["output"]  # the original answer, not re-run
         assert again.body["output_sha256"] == first.body["output_sha256"]
         assert again.body["usage"] == first.body["usage"]
         assert again.body["workflow_version"] == first.body["workflow_version"] == desk.v1
@@ -476,7 +481,9 @@ def test_racing_store_writers_bind_a_key_once(tmp_path):
     for t in threads:
         t.join(timeout=60)
     assert starts.count(True) == 1  # only the owner, and only once
-    assert not store.take_over_invocation(row.inference_id, row.owner, "own-x", time.time(), 0)
+    assert not store.take_over_invocation(
+        row.inference_id, row.owner, "own-x", time.time(), 0, frozenset(VersionState)
+    )
 
 
 def test_the_database_enforces_the_invocation_state_machine(desk):
@@ -597,8 +604,9 @@ def test_a_crash_after_completion_replays_the_stored_result_after_a_restart(desk
     again = invoke(desk.w.r, desk.key, "crash-after")
     assert again.status == 200 and replayed(again) and again.body["status"] == "SUCCEEDED"
     assert desk.sent() == sent
+    assert again.body["output"] == {"answer": "Lincoln"}
     record = desk.w.ok(desk.key, "GET", f"inferences/{again.body['inference_id']}")
-    assert record == again.body
+    assert record == again.body | {"output": None}  # the record itself keeps the hash only
 
 
 def test_a_restarted_server_keeps_every_binding(desk):
@@ -759,9 +767,8 @@ def _key_hash(key: str) -> str:
 
 
 # == the websearch request is gated too ==========================================================
-def test_a_crash_during_a_live_search_is_ambiguous_and_the_search_is_never_resent(
-    tmp_path, shared_provider
-):
+def _search_world(tmp_path: Path, shared_provider: FakeProvider) -> tuple[Any, str, str, Any]:
+    """A workspace whose production champion performs one live websearch per invocation."""
     from tests.dogfood_support import FakeBrave
     from tests.test_dogfood_lifecycle import websearch_world
 
@@ -780,6 +787,15 @@ def test_a_crash_during_a_live_search_is_ambiguous_and_the_search_is_never_resen
     wv = w.ok(key, "POST", "workflows", {"champion_id": champion}, 201)
     assert wv["document"]["versions"].get("evidence_source") == w.source.identity  # it searches
     w.deploy(key, wv["version_id"])
+    return w, ws, key, brave
+
+
+def test_a_crash_during_a_live_search_is_ambiguous_and_the_search_is_never_resent(
+    tmp_path, shared_provider
+):
+    from tests.dogfood_support import FakeBrave
+
+    w, ws, key, brave = _search_world(tmp_path, shared_provider)
     searches, model_calls = len(brave.requests), len(shared_provider.requests)
 
     real = FakeBrave.__call__
@@ -819,3 +835,481 @@ def test_experiment_keys_bound_before_this_change_keep_their_request_hash():
     assert claim is not None and claim.key_hash == _key_hash("k-1")
     assert claim.request_hash == canonical_hash({"operation": CREATE_EXPERIMENT, "request": body})
     assert _claim(None, CREATE_EXPERIMENT, {"request": body}) is None
+
+
+# == review: helpers ===========================================================================
+def crash_before_run(monkeypatch, r: Any, key: str, idem: str, path: str = PRODUCTION) -> None:
+    """The serving process dies after the key is bound RESERVED, before any provider request."""
+    with monkeypatch.context() as m:
+
+        async def dies(self, genome, task, **kw):
+            raise Crash
+
+        m.setattr("runtime.runner.WorkflowRunner.run", dies)
+        with pytest.raises((Crash, BaseExceptionGroup)):
+            invoke(r, key, idem, path=path)
+
+
+def crash_mid_call(monkeypatch, r: Any, key: str, idem: str) -> None:
+    """The serving process dies after the provider received its first request."""
+    from runtime.backends.openai_compatible import OpenAICompatibleClient
+
+    real = OpenAICompatibleClient._post_once
+
+    def dies_mid_call(self, payload):
+        real(self, payload)
+        raise Crash
+
+    with monkeypatch.context() as m:
+        m.setattr(OpenAICompatibleClient, "_post_once", dies_mid_call)
+        with pytest.raises((Crash, BaseExceptionGroup)):
+            invoke(r, key, idem)
+
+
+def race(calls: list[Any]) -> list[ApiResponse]:
+    """Run every call at the same instant, each in its own thread."""
+    barrier = threading.Barrier(len(calls))
+    out: list[Any] = [None] * len(calls)
+
+    def go(i: int) -> None:
+        barrier.wait()
+        out[i] = calls[i]()
+
+    threads = [threading.Thread(target=go, args=(i,)) for i in range(len(calls))]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=180)
+    assert all(o is not None for o in out)
+    return out
+
+
+def bound(desk: Desk, idem: str, operation: str = "deployments.invoke") -> Any:
+    row = desk.deployments().store.invocation(operation, _key_hash(idem))
+    assert row is not None
+    return row
+
+
+def outputs_table(desk: Desk) -> list[tuple[str, bytes]]:
+    conn = sqlite3.connect(desk.deployments().store.path)
+    try:
+        rows = conn.execute("SELECT output_sha256, envelope FROM inference_outputs").fetchall()
+    finally:
+        conn.close()
+    return [(sha, bytes(env)) for sha, env in rows]
+
+
+# == review 1: a successful replay returns the original output ==================================
+def test_a_successful_replay_returns_the_original_output_sealed_at_rest(desk):
+    first = invoke(desk.w.r, desk.key, "out-1")
+    assert first.status == 200 and first.body["output"] == {"answer": "Lincoln"}
+    calls = desk.sent()
+    desk.w.restart()
+    for r in (desk.w.r, desk.router()):  # after a restart, from any server process
+        again = invoke(r, desk.key, "out-1")
+        assert again.status == 200 and replayed(again)
+        assert again.body == first.body  # the very response, output included
+    assert desk.sent() == calls  # and still no second provider request
+    ((sha, envelope),) = outputs_table(desk)
+    assert sha == first.body["output_sha256"] and envelope.startswith(b"WYNKBLOB")
+    plain = canonical_json(first.body["output"]).encode()
+    path = desk.deployments().store.path
+    for f in path.parent.glob(path.name + "*"):  # the database, its WAL and shared memory
+        assert plain not in f.read_bytes()
+    # the inference record (and so monitoring) keeps the hash only, as before
+    record = desk.w.ok(desk.key, "GET", f"inferences/{first.body['inference_id']}")
+    assert record["output"] is None and record["output_sha256"] == sha
+    assert invoke(desk.w.r, desk.key).status == 200  # a keyless invoke seals nothing
+    assert len(outputs_table(desk)) == 1
+
+
+def test_a_sealed_output_fails_closed_and_is_never_re_run(desk):
+    first = invoke(desk.w.r, desk.key, "seal-1")
+    calls = desk.sent()
+    ((sha, envelope),) = outputs_table(desk)
+    with pytest.raises(DecryptionError):  # sealed for this workspace only
+        desk.w.r.keyring.cipher("ws-other").open(envelope, sha)
+    conn = sqlite3.connect(desk.deployments().store.path, isolation_level=None)
+    try:
+        tampered = envelope[:-1] + bytes([envelope[-1] ^ 1])
+        conn.execute("UPDATE inference_outputs SET envelope=?", (tampered,))
+    finally:
+        conn.close()
+    res = invoke(desk.w.r, desk.key, "seal-1")
+    e = err(res, 500, "storage_error")
+    assert replayed(res) and e["details"]["inference_id"] == first.body["inference_id"]
+    assert "Lincoln" not in json.dumps(res.body)
+    assert desk.sent() == calls and desk.state() == ["SUCCEEDED"]
+
+
+def test_key_rotation_re_seals_stored_outputs(desk, monkeypatch):
+    from api.tenancy import secure_data
+    from store.crypto import generate_key_entry
+
+    first = invoke(desk.w.r, desk.key, "rotate-1")
+    calls = desk.sent()
+    new = generate_key_entry("k-rotated")
+    monkeypatch.setenv("WYNK_DATA_KEYS", new)  # the old key retired too early
+    desk.w.restart()
+    err(invoke(desk.w.r, desk.key, "rotate-1"), 500, "storage_error")
+    monkeypatch.setenv("WYNK_DATA_KEYS", f"{new},{TEST_DATA_KEYS}")  # rotation as documented
+    desk.w.restart()
+    assert secure_data(desk.w.r)[desk.ws]["inference_outputs_rekeyed"] == 1
+    assert secure_data(desk.w.r)[desk.ws]["inference_outputs_rekeyed"] == 0  # idempotent
+    monkeypatch.setenv("WYNK_DATA_KEYS", new)  # now the old key can go
+    desk.w.restart()
+    again = invoke(desk.w.r, desk.key, "rotate-1")
+    assert again.status == 200 and again.body == first.body
+    assert desk.sent() == calls
+
+
+def test_without_an_output_keyring_a_keyed_invoke_binds_nothing(desk):
+    desk.deployments().outputs = None
+    err(invoke(desk.w.r, desk.key, "nokeys-1"), 503, "inference_backend_unavailable")
+    assert desk.sent() == 0
+    assert desk.counts() == {"inference_records": 0, "inference_invocations": 0}
+    assert invoke(desk.w.r, desk.key).status == 200  # keyless invokes are unaffected
+
+
+def test_the_database_refuses_a_success_without_its_sealed_output(desk, tmp_path):
+    invoke(desk.w.r, desk.key, "db-out-1")
+    conn = sqlite3.connect(desk.deployments().store.path, isolation_level=None)
+    try:
+        for statement in (
+            "DELETE FROM inference_outputs",
+            "UPDATE inference_outputs SET envelope=CAST('{\"answer\":1}' AS BLOB)",  # plaintext
+            "UPDATE inference_outputs SET output_sha256='x'",
+            "INSERT INTO inference_outputs SELECT inference_id || 'x', output_sha256, envelope, "
+            "created_at FROM inference_outputs",  # no invocation finishes with it
+        ):
+            with pytest.raises(sqlite3.IntegrityError):
+                conn.execute(statement)
+    finally:
+        conn.close()
+    store = SQLiteDeploymentStore(tmp_path / "d.sqlite3", workspace_id="ws-race")
+    raw = sqlite3.connect(store.path, isolation_level=None)
+    raw.execute("INSERT INTO workflow_versions VALUES ('wv-1', 'l', 'c', '{}', 'h', '2026-01-01')")
+    raw.close()
+    claim = IdempotencyClaim("deployments.invoke", "k" * 64, "r" * 64)
+    lease = time.time() + 30
+    kw = {"addressed_by": "production", "version_id": "wv-1", "lineage_id": "l", "revision": 1}
+    assert (
+        store.bind_invocation(claim, inference_id="inf-1", owner="o", lease_expires_at=lease, **kw)
+        is None
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        store.finish_invocation("inf-1", "o", "SUCCEEDED", "{}")  # no sealed output
+    row = store.invocation(claim.operation, claim.key_hash)
+    assert row is not None and row.state is InvocationState.RESERVED
+    assert store.inference("inf-1") is None  # the whole finish rolled back
+
+
+# == review 2: STARTED is durable before any request leaves the process ========================
+def test_started_is_committed_before_the_provider_receives_any_request(desk):
+    seen: list[list[str]] = []
+    desk.provider.on_request = lambda body: seen.append(desk.state())  # another connection
+    first = invoke(desk.w.r, desk.key, "boundary-1")
+    assert first.status == 200
+    assert len(seen) == desk.sent() == first.body["usage"]["model_calls"] > 0
+    assert all(s == ["STARTED"] for s in seen), seen  # committed, as seen at the far end
+    assert desk.state() == ["SUCCEEDED"]
+
+
+def test_started_is_committed_before_the_search_provider_receives_a_request(
+    tmp_path, shared_provider
+):
+    from tests.dogfood_support import FakeBrave
+
+    w, ws, key, brave = _search_world(tmp_path, shared_provider)
+    store = w.r.tenant(ws).api.deployments.store
+    seen: list[Any] = []
+    real = FakeBrave.__call__
+
+    def observed(self, *a, **k):
+        row = store.invocation("deployments.invoke", _key_hash("search-b"))  # a new connection
+        seen.append(None if row is None else row.state.value)
+        return real(self, *a, **k)
+
+    FakeBrave.__call__ = observed  # type: ignore[method-assign]
+    try:
+        res = invoke(w.r, key, "search-b")
+    finally:
+        FakeBrave.__call__ = real  # type: ignore[method-assign]
+    assert res.status == 200 and seen == ["STARTED"]
+
+
+def test_a_crash_inside_the_start_commit_sends_nothing_and_is_resumed_once(desk, monkeypatch):
+    def dies(self, *a, **k):  # the process dies before RESERVED -> STARTED commits
+        raise Crash
+
+    with monkeypatch.context() as m:
+        m.setattr(SQLiteDeploymentStore, "start_invocation", dies)
+        with pytest.raises((Crash, BaseExceptionGroup)):
+            invoke(desk.w.r, desk.key, "start-crash")
+    assert desk.sent() == 0 and desk.state() == ["RESERVED"]
+    desk.w.restart()
+    desk.later()
+    res = invoke(desk.w.r, desk.key, "start-crash")
+    assert res.status == 200 and replayed(res)
+    assert res.body["inference_id"] == bound(desk, "start-crash").inference_id
+    assert desk.sent() == res.body["usage"]["model_calls"]
+
+
+def test_a_crash_between_the_start_commit_and_the_request_is_ambiguous(desk, monkeypatch):
+    """STARTED committed, the process died before the request left: nothing was sent, but no
+    process can prove that - it is ambiguous (the safe side), never re-sent."""
+    real = SQLiteDeploymentStore.start_invocation
+
+    def commits_then_dies(self, *a, **k):
+        assert real(self, *a, **k)
+        raise Crash
+
+    with monkeypatch.context() as m:
+        m.setattr(SQLiteDeploymentStore, "start_invocation", commits_then_dies)
+        with pytest.raises((Crash, BaseExceptionGroup)):
+            invoke(desk.w.r, desk.key, "start-then-crash")
+    assert desk.sent() == 0 and desk.state() == ["STARTED"]
+    desk.w.restart()
+    desk.later()
+    for _ in range(2):
+        err(invoke(desk.w.r, desk.key, "start-then-crash"), 409, "inference_ambiguous_attempt")
+    assert desk.sent() == 0 and desk.state() == ["AMBIGUOUS"]
+
+
+def test_a_failed_start_commit_sends_nothing(desk, monkeypatch):
+    def refused(self, *a, **k):
+        raise sqlite3.OperationalError("disk I/O error")
+
+    with monkeypatch.context() as m:
+        m.setattr(SQLiteDeploymentStore, "start_invocation", refused)
+        first = invoke(desk.w.r, desk.key, "start-error")
+    e = err(first, 502, "inference_failed")
+    assert desk.sent() == 0 and desk.state() == ["FAILED"]  # finished without any request
+    again = invoke(desk.w.r, desk.key, "start-error")
+    assert err(again, 502, "inference_failed")["details"] == e["details"] and replayed(again)
+    assert desk.sent() == 0
+
+
+def test_concurrent_retries_recover_a_dead_reservation_exactly_once(desk, monkeypatch):
+    crash_before_run(monkeypatch, desk.w.r, desk.key, "recover-1")
+    inference_id = bound(desk, "recover-1").inference_id
+    routers = [desk.w.r, desk.router()]
+    for r in routers:
+        desk.later(r)  # both server processes see the dead owner's lease expired
+    out = race([lambda r=r: invoke(r, desk.key, "recover-1") for r in routers * 4])
+    done = [o for o in out if o.status == 200]
+    assert done and all(replayed(o) for o in out)
+    assert {o.body["inference_id"] for o in done} == {inference_id}
+    for o in out:
+        if o.status != 200:
+            assert err(o, 409, "inference_in_progress")["details"]["inference_id"] == inference_id
+    assert desk.sent() == done[0].body["usage"]["model_calls"]  # one takeover, one run
+    assert desk.counts() == {"inference_records": 1, "inference_invocations": 1}
+
+
+def test_concurrent_retries_of_a_dead_started_invocation_never_resend(desk, monkeypatch):
+    crash_mid_call(monkeypatch, desk.w.r, desk.key, "recover-2")
+    sent = desk.sent()
+    routers = [desk.w.r, desk.router()]
+    for r in routers:
+        desk.later(r)
+    out = race([lambda r=r: invoke(r, desk.key, "recover-2") for r in routers * 4])
+    for o in out:
+        assert replayed(o)
+        assert err(o, 409, "inference_ambiguous_attempt")["details"]["state"] == "AMBIGUOUS"
+    assert desk.sent() == sent == 1 and desk.state() == ["AMBIGUOUS"]
+
+
+def test_a_stalled_owner_whose_reservation_was_taken_over_sends_nothing(desk, monkeypatch):
+    from runtime.runner import WorkflowRunner
+
+    real = WorkflowRunner.run
+    stalled, go = threading.Event(), threading.Event()
+    first = [True]
+    lock = threading.Lock()
+
+    async def run(self, *a, **k):
+        with lock:
+            stall, first[0] = first[0], False
+        if stall:  # the first owner stalls after binding RESERVED, before any request
+            stalled.set()
+            assert go.wait(120)
+        return await real(self, *a, **k)
+
+    monkeypatch.setattr(WorkflowRunner, "run", run)
+    t, out = in_thread(lambda: invoke(desk.w.r, desk.key, "stall-1"))
+    assert stalled.wait(120)
+    assert desk.state() == ["RESERVED"] and desk.sent() == 0
+    observer = desk.router()
+    desk.later(observer)  # to another process the stalled owner looks dead
+    resumed = invoke(observer, desk.key, "stall-1")
+    assert resumed.status == 200 and replayed(resumed)
+    calls = desk.sent()
+    assert calls == resumed.body["usage"]["model_calls"]
+    go.set()
+    t.join(120)
+    (late,) = out
+    assert late.status == 200 and replayed(late)  # it reports the new owner's outcome
+    assert late.body == resumed.body
+    assert desk.sent() == calls  # its RESERVED -> STARTED was fenced: it sent nothing
+    assert desk.counts() == {"inference_records": 1, "inference_invocations": 1}
+
+
+# == review 3: deployment changes ==============================================================
+def _change(desk: Desk, change: str) -> None:
+    rev = desk.w.ok(desk.key, "GET", f"deployments/{LINEAGE}")["revision"]
+    if change == "replace":
+        desk.deploy(desk.v2)
+    elif change == "rollback":
+        desk.w.ok(desk.key, "POST", f"deployments/{LINEAGE}/rollback", {"expected_revision": rev})
+    else:  # promote the staged v2
+        desk.w.ok(desk.key, "POST", f"workflows/{desk.v2}/promote", {"expected_revision": rev})
+
+
+@pytest.mark.parametrize("change", ["replace", "rollback", "promote"])
+def test_finished_invocations_replay_unchanged_after_a_deployment_change(desk, change):
+    if change == "rollback":  # v2 serves now; the rollback retires it
+        desk.deploy(desk.v2)
+    if change == "promote":  # v2 is staged now; the promotion retires v1
+        rev = desk.w.ok(desk.key, "GET", f"deployments/{LINEAGE}")["revision"]
+        desk.w.ok(desk.key, "POST", f"workflows/{desk.v2}/stage", {"expected_revision": rev})
+    served = desk.v2 if change in ("rollback", "promote") else desk.v1
+    bad = {"question": "Which city?"}
+    first: dict[tuple[str, str], ApiResponse] = {}
+    for path in (PRODUCTION, f"workflows/{served}/invoke"):
+        first[(path, "ok")] = invoke(desk.w.r, desk.key, "fin-ok", path=path)
+        first[(path, "bad")] = invoke(desk.w.r, desk.key, "fin-bad", bad, path=path)
+        desk.provider.status = 503
+        first[(path, "fail")] = invoke(desk.w.r, desk.key, "fin-fail", path=path)
+        desk.provider.status = 200
+    assert [r.status for r in first.values()] == [200, 422, 502] * 2
+    calls = desk.sent()
+    _change(desk, change)
+    for (path, kind), was in first.items():
+        inputs = bad if kind == "bad" else NEW_ORDER
+        again = invoke(desk.w.r, desk.key, f"fin-{kind}", inputs, path=path)
+        assert again.status == was.status and replayed(again), (path, kind, again.body)
+        assert again.body == was.body  # the same output / the same error, same inference id
+    assert desk.sent() == calls
+
+
+def test_a_reserved_invocation_by_version_is_abandoned_once_its_version_retires(desk, monkeypatch):
+    path = f"workflows/{desk.v1}/invoke"
+    crash_before_run(monkeypatch, desk.w.r, desk.key, "ver-res", path=path)
+    desk.deploy(desk.v2)  # v1 is RETIRED
+    desk.later()
+    for _ in range(2):
+        e = err(
+            invoke(desk.w.r, desk.key, "ver-res", path=path), 409, "inference_deployment_changed"
+        )
+        assert e["details"]["workflow_version"] == desk.v1
+    assert desk.sent() == 0 and desk.state() == ["ABANDONED"]
+
+
+def test_a_reserved_staged_invocation_resumes_on_its_version_after_its_promotion(desk, monkeypatch):
+    rev = desk.w.ok(desk.key, "GET", f"deployments/{LINEAGE}")["revision"]
+    desk.w.ok(desk.key, "POST", f"workflows/{desk.v2}/stage", {"expected_revision": rev})
+    path = f"workflows/{desk.v2}/invoke"
+    crash_before_run(monkeypatch, desk.w.r, desk.key, "staged-res", path=path)
+    desk.w.ok(desk.key, "POST", f"workflows/{desk.v2}/promote", {"expected_revision": rev + 1})
+    desk.later()
+    res = invoke(desk.w.r, desk.key, "staged-res", path=path)
+    assert res.status == 200 and replayed(res)  # v2 still serves its own address
+    assert res.body["workflow_version"] == desk.v2 and res.body["addressed_by"] == "version"
+    assert desk.sent() == res.body["usage"]["model_calls"]
+
+
+def test_a_promotion_racing_a_takeover_never_runs_the_retired_version(desk, monkeypatch):
+    crash_before_run(monkeypatch, desk.w.r, desk.key, "race-res")
+    real = SQLiteDeploymentStore.take_over_invocation
+    once = [True]
+
+    def promote_first(self, *a, **k):
+        if once[0]:  # the promotion lands after the retry checked v1, before its takeover
+            once[0] = False
+            desk.deploy(desk.v2)
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(SQLiteDeploymentStore, "take_over_invocation", promote_first)
+    desk.later()
+    e = err(invoke(desk.w.r, desk.key, "race-res"), 409, "inference_deployment_changed")
+    assert e["details"]["workflow_version"] == desk.v1 and not once[0]
+    assert desk.sent() == 0 and desk.state() == ["ABANDONED"]
+    assert desk.counts()["inference_records"] == 0
+
+
+# == review 4: concurrent replays and conflicts ================================================
+def test_concurrent_retries_of_a_running_invocation_report_it_and_start_nothing(desk, monkeypatch):
+    entered, release_ = blocked_provider(monkeypatch)
+    t, out = in_thread(lambda: invoke(desk.w.r, desk.key, "busy-1"))
+    assert entered.wait(120)
+    inference_id = bound(desk, "busy-1").inference_id
+    routers = [desk.w.r, desk.router()]
+    same = [lambda r=r: invoke(r, desk.key, "busy-1") for r in routers * 3]
+    other = [lambda r=r: invoke(r, desk.key, "busy-1", OTHER_ORDER) for r in routers]
+    res = race(same + other)
+    for o in res[: len(same)]:
+        e = err(o, 409, "inference_in_progress")
+        assert replayed(o) and e["details"] == {
+            "inference_id": inference_id,
+            "workflow_version": desk.v1,
+            "state": "STARTED",
+        }
+    for o in res[len(same) :]:
+        err(o, 409, "idempotency_conflict")
+    assert len(desk.provider.requests) == 0 and desk.state() == ["STARTED"]
+    release_.set()
+    t.join(120)
+    (first,) = out
+    assert first.status == 200 and not replayed(first)
+    assert desk.sent() == first.body["usage"]["model_calls"]
+
+
+def test_racing_requests_with_different_payloads_bind_one_and_refuse_the_rest(desk):
+    routers = [desk.w.r, desk.router()]
+    payloads = [NEW_ORDER, OTHER_ORDER] * 4
+    out = race(
+        [lambda i=i: invoke(routers[i % 2], desk.key, "mixed-1", payloads[i]) for i in range(8)]
+    )
+    winners = [i for i, o in enumerate(out) if o.status == 200 and not replayed(o)]
+    assert len(winners) == 1, [(o.status, o.body) for o in out]
+    (w,) = winners
+    for i, o in enumerate(out):
+        if i == w:
+            continue
+        if payloads[i] != payloads[w]:
+            err(o, 409, "idempotency_conflict")
+        elif o.status == 200:
+            assert replayed(o) and o.body == out[w].body
+        else:
+            assert replayed(o) and err(o, 409, "inference_in_progress")
+    assert desk.sent() == out[w].body["usage"]["model_calls"]
+    assert desk.counts() == {"inference_records": 1, "inference_invocations": 1}
+
+
+def test_a_conflicting_payload_is_refused_in_every_state_and_moves_nothing(desk, monkeypatch):
+    invoke(desk.w.r, desk.key, "c-ok")
+    invoke(desk.w.r, desk.key, "c-bad", {"question": "Which city?"})
+    desk.provider.status = 503
+    invoke(desk.w.r, desk.key, "c-fail")
+    desk.provider.status = 200
+    crash_before_run(monkeypatch, desk.w.r, desk.key, "c-res")
+    crash_mid_call(monkeypatch, desk.w.r, desk.key, "c-amb")
+    desk.w.restart()
+    desk.later()  # the dead owners' leases look expired: a conflict must still move nothing
+
+    def refused_everywhere() -> None:
+        before = (desk.sent(), desk.state())
+        for idem in ("c-ok", "c-bad", "c-fail", "c-res", "c-amb"):
+            res = invoke(desk.w.r, desk.key, idem, OTHER_ORDER)
+            e = err(res, 409, "idempotency_conflict")
+            assert e.get("details", {}).get("inference_id") is None  # nothing about the owner
+        assert (desk.sent(), desk.state()) == before
+
+    refused_everywhere()
+    assert desk.state() == ["SUCCEEDED", "FAILED", "FAILED", "RESERVED", "STARTED"]
+    desk.deploy(desk.v2)  # the reserved one can never run now; the started one is ambiguous
+    err(invoke(desk.w.r, desk.key, "c-res"), 409, "inference_deployment_changed")
+    err(invoke(desk.w.r, desk.key, "c-amb"), 409, "inference_ambiguous_attempt")
+    refused_everywhere()
+    assert desk.state() == ["SUCCEEDED", "FAILED", "FAILED", "ABANDONED", "AMBIGUOUS"]

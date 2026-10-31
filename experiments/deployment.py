@@ -28,7 +28,8 @@ production -> inference -> rollback.
       the same, but the key is bound (``store.deployments.inference_invocations``) to ONE
       invocation and the version + revision resolved now, RESERVED before any provider request;
       the first model / websearch request waits for RESERVED -> STARTED (``_FirstRequestGate``);
-      the outcome and the terminal state commit together. A retry gets that invocation's state
+      the outcome (a SUCCEEDED output sealed under the workspace data key) and the terminal
+      state commit together. A retry gets that invocation's state
       (``_replayed``) and never sends a request for it again: a dead owner's RESERVED invocation
       is resumed on its version (it sent nothing), a dead owner's STARTED one is AMBIGUOUS.
 
@@ -91,6 +92,7 @@ from experiments.promotion import (
 )
 from runtime.model_client import GenerationRequest, GenerationResponse, ModelClient
 from runtime.sources import WebSearchRequest, WebSearchResponse, WebSearchSource, pin_websearch
+from store.crypto import BlobCipher, DecryptionError, NotEncrypted, UnknownKey
 from store.deployments import (
     FINISHED,
     DeploymentRow,
@@ -214,6 +216,13 @@ class InferenceDeploymentChanged(DeploymentError):
     address it was resolved for. It is never moved to another version."""
 
     code = "inference_deployment_changed"
+
+
+class InferenceOutputUnavailable(DeploymentError):
+    """A SUCCEEDED keyed invocation's sealed output cannot be opened (a key rotated away, or
+    the stored envelope fails authentication). Fails closed: nothing is re-run or guessed."""
+
+    code = "storage_error"
 
 
 # -- views --------------------------------------------------------------------------------------
@@ -807,6 +816,9 @@ class ChampionDeployments:
     lease_s: float = 30.0
     lease_clock: Callable[[], float] = time.time
     heartbeat: bool = True
+    # seals a keyed invocation's output for its retries (#33 keyring, this workspace's key);
+    # without one, an Idempotency-Key invocation is refused before anything is bound
+    outputs: BlobCipher | None = None
 
     # -- publish ----------------------------------------------------------------------------
     def publish(self, champion_id: str, actor: str = "api") -> tuple[WorkflowVersionView, bool]:
@@ -1036,6 +1048,7 @@ class ChampionDeployments:
         """``invoke``; with ``idempotency``, at most one invocation per key (``_replayed``).
         Returns ``(inference, replayed)``."""
         if idempotency is not None:
+            self._sealer()
             replayed = self._replay(idempotency, inputs, principal)
             if replayed is not None:
                 return replayed, True
@@ -1059,6 +1072,7 @@ class ChampionDeployments:
         """``invoke_production``; with ``idempotency`` the key binds the production version (and
         revision) it resolves NOW, so a retry never runs a version promoted later."""
         if idempotency is not None:
+            self._sealer()
             replayed = self._replay(idempotency, inputs, principal)
             if replayed is not None:
                 return replayed, True
@@ -1145,8 +1159,8 @@ class ChampionDeployments:
             bound_version = bind_version(document, self._runtime())
             inference_id = self.ids()
 
-            def record(status: str, record_json: str) -> InferenceRow:
-                return self.store.record_inference(
+            def record(status: str, record_json: str, output: Any) -> InferenceRow:
+                return self.store.record_inference(  # a keyless record keeps the hash only
                     inference_id, row.version_id, row.lineage_id, status, record_json
                 )
 
@@ -1205,10 +1219,10 @@ class ChampionDeployments:
         addressed_by: str,
         revision: int | None,
         principal: Mapping[str, Any] | None,
-        persist: Callable[[str, str], InferenceRow | None],
+        persist: Callable[[str, str, dict[str, Any] | None], InferenceRow | None],
     ) -> InferenceView:
-        """Run the bound version once and ``persist`` its measured outcome (``None``: this
-        process no longer owns the invocation, nothing was stored)."""
+        """Run the bound version once and ``persist(status, record_json, output)`` its measured
+        outcome (``None``: this process no longer owns the invocation, nothing was stored)."""
         task = ExecutionTask(
             contract=bound.contract, example=ExampleInput(row_id=inference_id, values=values)
         )
@@ -1239,7 +1253,7 @@ class ChampionDeployments:
         )
         record["authenticated_principal"] = _principal(principal)
         status = "SUCCEEDED" if failure is None else "FAILED"
-        stored = persist(status, canonical_json(record))
+        stored = persist(status, canonical_json(record), output)
         if stored is None:
             raise _ReservationLost(f"invocation {inference_id} is owned by another process")
         details = {"inference_id": inference_id, "workflow_version": row.version_id}
@@ -1253,6 +1267,14 @@ class ChampionDeployments:
         )
 
     # -- Idempotency-Key invocations -----------------------------------------------------------
+    def _sealer(self) -> BlobCipher:
+        if self.outputs is None:
+            raise InferenceBackendUnavailable(
+                "Idempotency-Key invocations need the workspace data keyring to store their "
+                "output for retries; none is configured in this process"
+            )
+        return self.outputs
+
     def _lease(self) -> float:
         return self.lease_clock() + self.lease_s
 
@@ -1279,8 +1301,12 @@ class ChampionDeployments:
         """Run an invocation this process owns, renewing its lease; the outcome and the
         terminal state commit together (``finish_invocation``)."""
 
-        def finish(status: str, record_json: str) -> InferenceRow | None:
-            return self.store.finish_invocation(inference_id, owner, status, record_json)
+        def finish(status: str, record_json: str, output: Any) -> InferenceRow | None:
+            sealed = None
+            if output is not None:  # SUCCEEDED: its retries return this exact output
+                sha = canonical_hash(output)  # = the record's output_sha256
+                sealed = (sha, self._sealer().seal(canonical_json(output).encode("ascii"), sha))
+            return self.store.finish_invocation(inference_id, owner, status, record_json, sealed)
 
         lease = Lease(
             _InvocationLeases(self.store),  # type: ignore[arg-type]
@@ -1328,7 +1354,7 @@ class ChampionDeployments:
         """The authoritative state of the invocation ``claim``'s key is bound to. It never makes
         a second provider request for that invocation:
 
-            SUCCEEDED    the stored inference (its output is not stored, only its hash)
+            SUCCEEDED    the stored inference with its sealed output (``_output``)
             FAILED       the original error, with the same inference id
             RESERVED / STARTED, owner alive        ``InferenceInProgress``
             STARTED, owner dead -> AMBIGUOUS       ``InferenceAmbiguousAttempt``
@@ -1386,15 +1412,19 @@ class ChampionDeployments:
         now: float,
     ) -> InferenceView | None:
         """Take over a dead owner's RESERVED invocation and run it on the version it bound;
-        ``None``: another process moved it first."""
+        ``None``: another process (or a deployment write) moved it first. Whether the bound
+        version still serves is re-checked inside the take-over / abandon CAS itself, so a
+        promotion or rollback racing this retry can never make it run a version that no longer
+        serves the address - nor another version."""
         row = self._row(current.version_id)
         document = check_document(row)
-        if current.addressed_by == "production":
-            serves = row.state is VersionState.PRODUCTION
-        else:
-            serves = row.state in DEPLOYABLE
-        if not serves:
-            if self.store.abandon_invocation(current.inference_id, current.owner, now):
+        serving = (
+            frozenset({VersionState.PRODUCTION})
+            if current.addressed_by == "production"
+            else DEPLOYABLE
+        )
+        if row.state not in serving:
+            if self.store.abandon_invocation(current.inference_id, current.owner, now, serving):
                 raise InferenceDeploymentChanged(
                     _ABANDONED,
                     inference_id=current.inference_id,
@@ -1408,7 +1438,7 @@ class ChampionDeployments:
         gate = self._gate(current.inference_id, owner)
         bound = bind_version(document, self._runtime(), gate)  # a refusal leaves it reserved
         if not self.store.take_over_invocation(
-            current.inference_id, current.owner, owner, now, self._lease()
+            current.inference_id, current.owner, owner, now, self._lease(), serving
         ):
             return None
         view, _ = self._run_owned(
@@ -1427,11 +1457,12 @@ class ChampionDeployments:
         return view
 
     def _finished(self, current: InvocationRow, inputs: Mapping[str, Any]) -> InferenceView:
-        """A finished invocation as its first response reported it: the stored inference, or
-        the same error with the same inference id."""
+        """A finished invocation as its first response reported it: the stored inference with
+        its sealed output, or the same error with the same inference id. It never depends on
+        the deployment now: a version promoted, replaced or rolled back since still replays."""
         view = self.inference(current.inference_id)
         if view.status == "SUCCEEDED":
-            return view
+            return view.model_copy(update={"output": self._output(view)})
         failure = view.failure or {}
         kind = failure.get("kind")
         if kind == INPUT_SCHEMA_REJECTED:  # the same request: the same violation, re-derived
@@ -1448,6 +1479,39 @@ class ChampionDeployments:
         if kind == "output_schema_invalid":
             raise OutputSchemaViolation(message, **details, failure_kind=kind)
         raise InferenceFailed(message, **details, failure_kind=str(kind))
+
+    def _output(self, view: InferenceView) -> dict[str, Any]:
+        """The sealed output of a SUCCEEDED keyed invocation, authenticated (AES-GCM, bound to
+        this workspace and the output hash) and re-hashed against its inference record."""
+        details = {"inference_id": view.inference_id, "workflow_version": view.workflow_version}
+        stored = self.store.invocation_output(view.inference_id)
+        if stored is None or stored[0] != view.output_sha256:
+            raise InferenceOutputUnavailable(
+                "the stored output of this invocation is missing", **details
+            )
+        try:
+            plain = self._sealer().open(stored[1], stored[0])
+        except (DecryptionError, NotEncrypted, UnknownKey):
+            raise InferenceOutputUnavailable(
+                "the stored output of this invocation cannot be opened", **details
+            ) from None
+        output = json.loads(plain)
+        if not isinstance(output, dict) or canonical_hash(output) != view.output_sha256:
+            raise InferenceOutputUnavailable(
+                "the stored output does not match its inference record", **details
+            )
+        return output
+
+    def rekey_outputs(self) -> int:
+        """``secure-data`` key rotation: re-seal every stored output under the active key."""
+        sealer = self._sealer()
+
+        def reseal(sha: str, envelope: bytes) -> bytes | None:
+            if BlobCipher.key_id_of(envelope) == sealer.keyring.active_id:
+                return None
+            return sealer.seal(sealer.open(envelope, sha), sha)
+
+        return self.store.rekey_outputs(reseal)
 
 
 _ABANDONED = (

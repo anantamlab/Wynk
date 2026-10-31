@@ -515,6 +515,7 @@ class TenantRouter:
             SQLiteDeploymentStore(root / "deployments.sqlite3", workspace_id=ws),
             promotions,
             self.inference,
+            outputs=self.keyring.cipher(ws),  # a keyed invocation's output, sealed for retries
         )
         monitor = ProductionMonitor(
             deployments,
@@ -1165,11 +1166,12 @@ def utc() -> str:
 # -- #33 operations ---------------------------------------------------------------------------
 def secure_data(router: TenantRouter) -> dict[str, Any]:
     """Bring every workspace up to #33: encrypt pre-#33 plaintext blobs (and re-encrypt blobs
-    under a rotated-out key with the active one), and scrub the plaintext row previews pre-#33
-    upload records kept. Idempotent."""
+    under a rotated-out key with the active one, and the sealed outputs of keyed invocations
+    too), and scrub the plaintext row previews pre-#33 upload records kept. Idempotent."""
     out: dict[str, Any] = {}
     for ws in router.identity.workspaces():
-        service = router.tenant(ws.workspace_id).api.service
+        api = router.tenant(ws.workspace_id).api
+        service = api.service
         report = service.blobs.secure()  # type: ignore[attr-defined]
         out[ws.workspace_id] = {
             "encrypted": report.encrypted,
@@ -1177,6 +1179,7 @@ def secure_data(router: TenantRouter) -> dict[str, Any]:
             "healthy": report.healthy,
             "refused": report.refused,
             "previews_scrubbed": service.repo.scrub_previews(),  # type: ignore[attr-defined]
+            "inference_outputs_rekeyed": api.deployments.rekey_outputs(),
         }
     return out
 
