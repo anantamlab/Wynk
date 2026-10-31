@@ -103,8 +103,7 @@ No row is FAIL, BLOCKED or NOT TESTED.
   search is refused before it is recorded. The job becomes INTERRUPTED (`runtime_unavailable`),
   and `resume` under the original provider gives exactly the undisturbed result. Genomes that
   do not search are not affected. A drift between preflight and a search request is now a typed zero-spend refusal, recorded as unscored audit evidence and safely reattempted after resume. If the spend cannot be proved zero, the attempt stays ambiguous instead of being re-sent.
-* **R4.** `POST experiments` is not idempotent. A client that retries after a lost response
-  creates a second job (and spends again).
+* **R4 (fixed in #60).** `POST experiments` supports a workspace-scoped `Idempotency-Key`. Retrying a canonically equivalent request returns the original job without creating or charging for another; callers must supply and reuse the key.
 * **R5.** PII rules detect fixed formats only (email, phone, cards, SSN, IBAN). Names, addresses
   and free-text health data are not detected (documented).
 * **R6.** The audit used a deterministic fake provider. It proves the product path, not the
