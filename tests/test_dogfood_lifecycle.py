@@ -1072,7 +1072,9 @@ def test_websearch_drift_between_preflight_and_search_is_not_scored(
     ref_job = ref.ok(ref_key, "POST", "experiments", body, 201)
     ref.run(ref_ws, ref_job["job_id"])
     expected_calls = len(provider.requests) - start
-    expected = ref.ok(ref_key, "GET", f"experiments/{ref_job['job_id']}/artifact")["artifact"]["runs"]
+    expected = ref.ok(ref_key, "GET", f"experiments/{ref_job['job_id']}/artifact")[
+        "artifact"
+    ]["runs"]
 
     brave = FakeBrave()
     w = websearch_world(tmp_path / "drift", provider, brave)
@@ -1121,9 +1123,16 @@ def test_websearch_drift_between_preflight_and_search_is_not_scored(
 
     def projection(runs):
         return [
-            (r["strategy"], r["champion"]["genome_hash"],
-             [(c["genome_hash"], c["validation"]["score_mean"]) for c in r["candidates"]],
-             r["usage"]["model_calls"], r["usage"]["tool_calls"])
+            (
+                r["strategy"],
+                r["champion"]["genome_hash"],
+                [
+                    (c["genome_hash"], c["validation"]["score_mean"])
+                    for c in r["candidates"]
+                ],
+                r["usage"]["model_calls"],
+                r["usage"]["tool_calls"],
+            )
             for r in runs
         ]
 
