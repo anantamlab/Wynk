@@ -1133,6 +1133,7 @@ def test_a_drift_refusal_is_never_charged(root):
     ws = LateDrift()
     out, _ = run_gather(root, ws)
     assert "identity changed" in out.failure.message
+    assert out.failure.kind is FailureKind.PROVIDER_DRIFTED
     assert out.usage.tool_calls == 0 and ws.requests == []
 
 
@@ -1147,6 +1148,7 @@ def test_websearch_result_count_is_pinned_and_drift_is_not_charged(root):
         pinned.search(request())
     out, _ = run_gather(root, pinned)
     assert out.failure is not None and out.usage.tool_calls == 0
+    assert out.failure.kind is FailureKind.PROVIDER_DRIFTED
     assert ws.requests == []
 
 
