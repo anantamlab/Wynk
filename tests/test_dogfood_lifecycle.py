@@ -1148,6 +1148,31 @@ def test_websearch_drift_between_preflight_and_search_is_not_scored(
     assert not any(a.result_json for a in attempts if a.resolution == "provider_drift_refused")
 
 
+
+def test_preflight_programming_error_fails_instead_of_becoming_runtime_drift(
+    tmp_path, provider, monkeypatch
+):
+    """Only ProviderDrifted is resumable; an unexpected bug fails the unit closed."""
+    from runtime.runner import WorkflowRunner
+    from tests.dogfood_support import FakeBrave
+
+    w = websearch_world(tmp_path, provider, FakeBrave())
+    ws, key = w.workspace("Dogfood A", "owner-a@example.test")
+    contract = {"workflow": {"allowed_sources": ["websearch"]}}
+    body = w.experiment_body(w.dataset(key), ("aco",), **contract)
+    job = w.ok(key, "POST", "experiments", body, 201)
+
+    def broken_preflight(self, genome):
+        raise RuntimeError("preflight programming bug")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(WorkflowRunner, "check_evidence", broken_preflight)
+        w.run(ws, job["job_id"])
+    view = w.ok(key, "GET", f"experiments/{job['job_id']}")
+    assert (view["state"], view["reason"]) == ("FAILED", "runner_error"), view
+    assert "preflight programming bug" in str(view)
+
+
 # == 7. memory lifecycle =========================================================================
 def test_memory_is_reused_only_for_the_exact_dataset_model_and_runtime(world):
     from memory.priors import RetireReason, row_hash
