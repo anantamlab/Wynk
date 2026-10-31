@@ -102,9 +102,7 @@ No row is FAIL, BLOCKED or NOT TESTED.
   champion: a drifted websearch genome could win with a 0.0 score. Now the next run that would
   search is refused before it is recorded. The job becomes INTERRUPTED (`runtime_unavailable`),
   and `resume` under the original provider gives exactly the undisturbed result. Genomes that
-  do not search are not affected. Residual: a drift that lands inside one run, after its
-  pre-run check, is still refused by the executor and recorded as a failed row (never sent,
-  never charged).
+  do not search are not affected. A drift between preflight and a search request is now a typed zero-spend refusal, recorded as unscored audit evidence and safely reattempted after resume. If the spend cannot be proved zero, the attempt stays ambiguous instead of being re-sent.
 * **R4.** `POST experiments` is not idempotent. A client that retries after a lost response
   creates a second job (and spends again).
 * **R5.** PII rules detect fixed formats only (email, phone, cards, SSN, IBAN). Names, addresses
