@@ -310,8 +310,6 @@ def _fail(
     **kwargs,
 ) -> ExecutorOutput:
     return ExecutorOutput(
-        failure=FailureInfo(
-            kind=kind, message=message, stage_index=inp.stage_index
-        ),
+        failure=FailureInfo(kind=kind, message=message, stage_index=inp.stage_index),
         **kwargs,
     )
