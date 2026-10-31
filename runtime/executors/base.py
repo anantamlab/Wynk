@@ -91,6 +91,9 @@ class GuardedExecutor(StageExecutor):
             return _breach(inp, ctx, BudgetUsage(), ExecutionMetrics())
         start = self._clock()
         out = await self.inner.run(inp, ctx)
+        if out.failure is not None and out.failure.kind is FailureKind.PROVIDER_DRIFTED:
+            # Refused before any provider call: not a measurement and not a charge.
+            return out
         usage = out.usage
         if usage.wall_time_s == 0.0:  # executor did not self-report: use measured time
             usage = usage.model_copy(
