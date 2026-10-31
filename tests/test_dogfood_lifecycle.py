@@ -1053,7 +1053,6 @@ def test_a_websearch_drift_during_a_job_interrupts_it_and_resume_matches_an_undi
     assert len(provider.requests) - calls == ref_calls  # no model call was sent twice
 
 
-
 def test_websearch_drift_between_preflight_and_search_is_not_scored(
     tmp_path, provider, monkeypatch
 ):
@@ -1072,9 +1071,9 @@ def test_websearch_drift_between_preflight_and_search_is_not_scored(
     ref_job = ref.ok(ref_key, "POST", "experiments", body, 201)
     ref.run(ref_ws, ref_job["job_id"])
     expected_calls = len(provider.requests) - start
-    expected = ref.ok(ref_key, "GET", f"experiments/{ref_job['job_id']}/artifact")[
-        "artifact"
-    ]["runs"]
+    expected = ref.ok(ref_key, "GET", f"experiments/{ref_job['job_id']}/artifact")["artifact"][
+        "runs"
+    ]
 
     brave = FakeBrave()
     w = websearch_world(tmp_path / "drift", provider, brave)
@@ -1097,7 +1096,8 @@ def test_websearch_drift_between_preflight_and_search_is_not_scored(
         w.run(ws, job["job_id"])
     view = w.ok(key, "GET", f"experiments/{job['job_id']}")
     assert drifted[0] and (view["state"], view["reason"]) == (
-        "INTERRUPTED", "runtime_unavailable"
+        "INTERRUPTED",
+        "runtime_unavailable",
     ), view
     assert not brave.requests  # no websearch request was sent after the provider drift
     # ACO may have completed unrelated DIRECT runs before reaching the websearch candidate.
@@ -1126,10 +1126,7 @@ def test_websearch_drift_between_preflight_and_search_is_not_scored(
             (
                 r["strategy"],
                 r["champion"]["genome_hash"],
-                [
-                    (c["genome_hash"], c["validation"]["score_mean"])
-                    for c in r["candidates"]
-                ],
+                [(c["genome_hash"], c["validation"]["score_mean"]) for c in r["candidates"]],
                 r["usage"]["model_calls"],
                 r["usage"]["tool_calls"],
             )
@@ -1146,7 +1143,6 @@ def test_websearch_drift_between_preflight_and_search_is_not_scored(
     ]
     assert len([a for a in attempts if a.resolution == "provider_drift_refused"]) == 1
     assert not any(a.result_json for a in attempts if a.resolution == "provider_drift_refused")
-
 
 
 def test_preflight_programming_error_fails_instead_of_becoming_runtime_drift(
