@@ -820,6 +820,7 @@ class SQLiteJobStore:
         """Close a STARTED attempt proven to have made NO tool/model call. The ERRORED row
         remains as audit evidence; its distinct resolution permits a fresh attempt after resume
         without confusing a provider refusal with an ambiguous charged call."""
+
         def refuse(c: _Conn) -> None:
             cur = c.execute(
                 "UPDATE experiment_attempts SET state='ERRORED', "
