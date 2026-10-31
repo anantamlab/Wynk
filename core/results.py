@@ -96,6 +96,7 @@ class ExecutionMetrics(BaseModel):
 class FailureKind(StrEnum):
     BUDGET_EXCEEDED = "budget_exceeded"
     EXECUTOR_ERROR = "executor_error"
+    PROVIDER_DRIFTED = "provider_drifted"  # live evidence refused before a charge; not a score
     MODEL_ERROR = "model_error"
     SCHEMA_INVALID = "schema_invalid"
     NO_ANSWER = "no_answer"

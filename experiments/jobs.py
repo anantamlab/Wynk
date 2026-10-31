@@ -39,6 +39,13 @@ How a unit survives a crash: deterministic re-execution over a write-ahead run l
     its original worker stored the result late, or the runtime's ``replay_proof`` (e.g. a
     deterministic response cache) proves the result without a call.
 
+A live evidence provider that drifts mid-job is handled like a runtime that no longer binds:
+the next attempt that would use it is refused by ``JobBinding.preflight`` BEFORE it is written.
+A drift landing after preflight is detected as a typed, zero-spend provider refusal; it leaves
+an unscored ERRORED audit row with resolution ``provider_drift_refused``. Both paths interrupt
+the unit with ``runtime_unavailable``, and resume under the original identity reuses completed
+runs and skips those refusal rows. No refused result reaches the optimizer or champion.
+
 There is no exactly-once claim beyond this: a crash between the provider charging and the
 result being committed is reported (ambiguous), never hidden.
 
@@ -70,7 +77,7 @@ from core.constraints import ConstraintChecker
 from core.dataset import DatasetSplits
 from core.genome import Genome
 from core.models import AllowedModels
-from core.results import EvaluatedRun, RunVersions
+from core.results import EvaluatedRun, FailureKind, RunVersions
 from core.run_contract import ContractSuite, ExecutionTask
 from core.task_contract import TaskContract
 from evaluation.fitness import FitnessFunction
@@ -109,6 +116,7 @@ from experiments.provenance import (
     verify_artifact,
 )
 from memory.priors import PriorUnavailable, StartMode, StartReason, WarmStart
+from runtime.sources import ProviderDrifted
 from store.datasets import Conflict
 from store.jobs import (
     AttemptRow,
@@ -248,6 +256,10 @@ class JobBinding:
     # ``core.evidence_authority``; ``None``: none available). Not part of ``run_versions``, which a
     # fetch genome reports without it: workflow memory keys it separately (#28).
     evidence_provider: str | None = None
+    # Raises when this runtime can no longer run a genome under the bound evidence authority
+    # (``WorkflowRunner.check_evidence``: its live provider drifted). Checked before each new
+    # attempt is written: the unit is INTERRUPTED (runtime_unavailable) and nothing is recorded.
+    preflight: Callable[[Genome], None] | None = None
 
 
 @dataclass(frozen=True)
@@ -288,6 +300,7 @@ class WorkflowBackend:
     # The live external evidence providers the runner has for the job's contract
     # (``WorkflowRunner.evidence_authority(contract)``).
     evidence_provider: str | None = None
+    preflight: Callable[[Genome], None] | None = None  # ``WorkflowRunner.check_evidence``
 
 
 @dataclass
@@ -326,6 +339,7 @@ class DatasetRuntime:
             replay_proof=backend.replay_proof,
             run_versions=declared,
             evidence_provider=backend.evidence_provider,
+            preflight=backend.preflight,
         )
 
     def bind_heldout(self, definition: ExperimentJobDefinition) -> HeldoutBinding:
@@ -580,8 +594,10 @@ class DurableEvaluate:
         stored: Sequence[AttemptRow],
         journal: Journal,
         measure: Callable[[EvaluatedRun], dict[str, Any]],
+        preflight: Callable[[Genome], None] | None = None,
     ) -> None:
         self._inner = inner
+        self._preflight = preflight
         self._lease = lease
         self._run_id = run_id
         self._stored = {a.attempt_id: a for a in stored}
@@ -608,12 +624,23 @@ class DurableEvaluate:
 
     def __call__(self, genome: Genome, task: ExecutionTask, trial: int, seed: int) -> EvaluatedRun:
         key = (genome.genome_hash, task.id, trial, seed)
+        lz = self._lease
         with self._lock:
             n = self._counts.get(key, 0)
+            attempt_id = attempt_identity(lz.claim.job_id, self._run_id, *key, n)
+            row = self._stored.get(attempt_id)
+            while (
+                row is not None
+                and row.state is AttemptState.ERRORED
+                and row.resolution == "provider_drift_refused"
+            ):
+                # The old attempt never reached the provider or optimizer. Preserve its
+                # audit row and use a new attempt id under the same scientific run identity.
+                self._consumed.add(attempt_id)
+                n += 1
+                attempt_id = attempt_identity(lz.claim.job_id, self._run_id, *key, n)
+                row = self._stored.get(attempt_id)
             self._counts[key] = n + 1
-        lz = self._lease
-        attempt_id = attempt_identity(lz.claim.job_id, self._run_id, *key, n)
-        row = self._stored.get(attempt_id)
         if row is not None:
             if row.state is not AttemptState.COMPLETED:
                 raise AmbiguousAttempt(f"attempt {attempt_id} ({task.id}) has no stored result")
@@ -632,6 +659,11 @@ class DurableEvaluate:
                 f"re-execution asked for a run that is not in the log ({task.id}, trial {trial})"
                 " before reproducing the stored progress"
             )
+        if self._preflight is not None:
+            try:  # e.g. a drifted live provider: its refusal would measure nothing
+                self._preflight(genome)
+            except ProviderDrifted as exc:
+                raise RuntimeMismatch(str(exc)) from exc
         lz.store.start_attempt(
             lz.claim,
             NewAttempt(
@@ -651,6 +683,21 @@ class DurableEvaluate:
         except Exception as exc:
             lz.store.error_attempt(lz.claim, attempt_id, f"{type(exc).__name__}: {exc}")
             raise
+        if (
+            run.execution.failure is not None
+            and run.execution.failure.kind is FailureKind.PROVIDER_DRIFTED
+        ):
+            # The provider may have drifted after our preflight. Only a provably unsent
+            # refusal is resumable. A refusal after any charged action stays ambiguous:
+            # never silently re-send potentially billed work or treat it as a score.
+            usage = run.execution.budget_usage
+            metrics = run.execution.metrics
+            if usage.tool_calls or usage.tokens or usage.retries or metrics.model_calls:
+                raise AmbiguousAttempt(
+                    "provider drift after charged work; attempt spend must be resolved"
+                )
+            lz.store.refuse_provider_drift(lz.claim, attempt_id, run.execution.failure.message)
+            raise RuntimeMismatch(run.execution.failure.message)
         timing = self._inner_timing(genome, task, trial, seed) if self._inner_timing else None
         lz.store.complete_attempt(
             lz.claim,
@@ -812,6 +859,7 @@ class JobWorker:
             store.attempts(*claim.unit),
             journal,
             meter.measure,
+            binding.preflight,
         )
 
         def counts(state: UnitState, reason: Reason | None = None) -> UnitOutcome:
@@ -865,6 +913,10 @@ class JobWorker:
         except AmbiguousAttempt as exc:
             self._finish(lease, UnitState.INTERRUPTED, Reason.AMBIGUOUS_ATTEMPT, str(exc))
             return counts(UnitState.INTERRUPTED, Reason.AMBIGUOUS_ATTEMPT)
+        except RuntimeMismatch as exc:  # refused before its attempt was written: resumable
+            self._bindings.pop(job.job_id, None)  # resuming re-proves the job's identity
+            self._finish(lease, UnitState.INTERRUPTED, Reason.RUNTIME_UNAVAILABLE, str(exc))
+            return counts(UnitState.INTERRUPTED, Reason.RUNTIME_UNAVAILABLE)
         except ReplayDiverged as exc:
             self._finish(lease, UnitState.FAILED, Reason.REPLAY_DIVERGED, str(exc))
             return counts(UnitState.FAILED, Reason.REPLAY_DIVERGED)

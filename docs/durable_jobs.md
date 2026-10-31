@@ -46,7 +46,7 @@ Units are `PENDING | RUNNING | COMPLETED | CANCELLED | FAILED | INTERRUPTED`, wi
 | --- | --- | --- |
 | `process_lost` | the unit's worker died with nothing in flight | yes, by any worker |
 | `ambiguous_attempt` | a model call started and its result was never stored | **no** |
-| `runtime_unavailable` | this process could not bind the job, or its binding no longer reproduces the job's identity | no (explicit resume) |
+| `runtime_unavailable` | this process could not bind the job, or its binding no longer reproduces the job's identity (also: a bound live provider drifted, refused before the run was recorded) | no (explicit resume) |
 | `resume_requested` | explicitly resumed | yes |
 | `cancelled` / `job_failed` | stopped because the job was cancelled, or another unit failed | never (terminal) |
 | `model_unavailable`, `experiment_error`, `reservation_overflow`, `pricing_error`, `runner_error`, `replay_diverged` | failed closed | never (terminal) |
@@ -67,7 +67,7 @@ transaction per write, and a connection per operation.
   request and the final artifact.
 * **`experiment_units`.** State, reason, lease (`lease_owner`, `lease_until`, `fence`), and the
   completed strategy-run record.
-* **`experiment_attempts`.** The write-ahead log of workflow runs. Each row holds a deterministic
+* **`experiment_attempts`.** The write-ahead log of workflow runs. If websearch drift is detected after preflight, a zero-spend `provider_drift_refused` resolution is stored as an unscored `ERRORED` attempt; a new attempt ID is used after resume. Charged or ambiguous work is never automatically re-sent. Each row holds a deterministic
   `attempt_id` = hash(job, unit run id, genome, row, trial, run seed, attempt n), the genome, and
   a state of `STARTED`, `COMPLETED` or `ERRORED`. A completed row also holds the `EvaluatedRun`,
   the measured and priced usage exactly as `BudgetLedger.measure` reports it, and timing.
