@@ -67,7 +67,7 @@ transaction per write, and a connection per operation.
   request and the final artifact.
 * **`experiment_units`.** State, reason, lease (`lease_owner`, `lease_until`, `fence`), and the
   completed strategy-run record.
-* **`experiment_attempts`.** The write-ahead log of workflow runs. Each row holds a deterministic
+* **`experiment_attempts`.** The write-ahead log of workflow runs. If websearch drift is detected after preflight, a zero-spend `provider_drift_refused` resolution is stored as an unscored `ERRORED` attempt; a new attempt ID is used after resume. Charged or ambiguous work is never automatically re-sent. Each row holds a deterministic
   `attempt_id` = hash(job, unit run id, genome, row, trial, run seed, attempt n), the genome, and
   a state of `STARTED`, `COMPLETED` or `ERRORED`. A completed row also holds the `EvaluatedRun`,
   the measured and priced usage exactly as `BudgetLedger.measure` reports it, and timing.
