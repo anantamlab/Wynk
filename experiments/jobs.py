@@ -687,9 +687,7 @@ class DurableEvaluate:
                 raise AmbiguousAttempt(
                     "provider drift after charged work; attempt spend must be resolved"
                 )
-            lz.store.refuse_provider_drift(
-                lz.claim, attempt_id, run.execution.failure.message
-            )
+            lz.store.refuse_provider_drift(lz.claim, attempt_id, run.execution.failure.message)
             raise RuntimeMismatch(run.execution.failure.message)
         timing = self._inner_timing(genome, task, trial, seed) if self._inner_timing else None
         lz.store.complete_attempt(
