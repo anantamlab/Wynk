@@ -20,6 +20,29 @@ Records
     deployment_events   append-only history (trigger): who did what to which version, which
                         version it replaced, and the revision before and after.
     inference_records   append-only (trigger): one per executed invocation, citing the version.
+    inference_invocations
+                        an ``Idempotency-Key`` invocation: the key (as its sha256 only), the
+                        canonical hash of the request it was first sent with, the inference id
+                        and the version / revision it is bound to, and its state. Written
+                        BEFORE any provider call; never deleted (trigger); identity columns
+                        never change and the state only moves along the machine below
+                        (trigger). A SUCCEEDED / FAILED invocation always has its inference
+                        record, committed in the same transaction (trigger).
+
+Invocation state (``InvocationState``)
+
+    RESERVED --(first provider request about to leave the process)--> STARTED
+    RESERVED --> SUCCEEDED | FAILED        finished without any provider request
+    RESERVED --(owner dead: lease expired, deployment no longer serves it)--> ABANDONED
+    STARTED  --> SUCCEEDED | FAILED        the measured outcome, with its inference record
+    STARTED  --(owner dead: lease expired)--> AMBIGUOUS   a request may have been sent; never
+                                                          re-sent automatically
+    AMBIGUOUS --> SUCCEEDED | FAILED       only the original owner, with the measured outcome
+
+    Every move is a compare-and-set on (state, owner[, lease]) in one ``BEGIN IMMEDIATE``
+    transaction, so of two processes exactly one wins. A RESERVED invocation whose lease
+    expired provably sent nothing (an owner must win RESERVED -> STARTED before its first
+    request), so another request with the same key may take it over and run it.
 
 Lifecycle
 
@@ -47,7 +70,7 @@ from pathlib import Path
 from typing import Any
 
 from store.datasets import Conflict, IntegrityViolation, RepositoryError, _Conn
-from store.jobs import utc_now
+from store.jobs import IdempotencyClaim, utc_now
 from store.tenancy import StoreQuota, admit, bind_sqlite
 
 
@@ -118,6 +141,35 @@ class InferenceRow:
     created_at: str
 
 
+class InvocationState(StrEnum):
+    RESERVED = "RESERVED"  # bound; no provider request has left the process
+    STARTED = "STARTED"  # a provider request may have been sent
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    AMBIGUOUS = "AMBIGUOUS"  # STARTED and its owner died: the outcome is unknown
+    ABANDONED = "ABANDONED"  # RESERVED, its owner died and the deployment no longer serves it
+
+
+FINISHED = frozenset({InvocationState.SUCCEEDED, InvocationState.FAILED})
+
+
+@dataclass(frozen=True)
+class InvocationRow:
+    operation: str
+    key_hash: str
+    request_hash: str
+    inference_id: str
+    addressed_by: str  # "version" | "production"
+    version_id: str  # the version the key is bound to: a retry never runs another one
+    lineage_id: str
+    deployment_revision: int | None
+    state: InvocationState
+    owner: str
+    lease_expires_at: float  # wall-clock seconds; meaningful while RESERVED / STARTED
+    created_at: str
+    updated_at: str
+
+
 SCHEMA_VERSION = 1
 _TRANSITIONS = (
     "CREATED>STAGING",
@@ -125,6 +177,19 @@ _TRANSITIONS = (
     "STAGING>RETIRED",
     "PRODUCTION>RETIRED",
     "RETIRED>PRODUCTION",  # rollback; the store checks the version was in production before
+)
+_INVOCATION_TRANSITIONS = (
+    "RESERVED>RESERVED",  # lease renewal / takeover of a dead owner's reservation
+    "RESERVED>STARTED",
+    "RESERVED>SUCCEEDED",
+    "RESERVED>FAILED",
+    "RESERVED>ABANDONED",
+    "STARTED>STARTED",  # lease renewal
+    "STARTED>SUCCEEDED",
+    "STARTED>FAILED",
+    "STARTED>AMBIGUOUS",
+    "AMBIGUOUS>SUCCEEDED",  # the original owner measured the outcome after all
+    "AMBIGUOUS>FAILED",
 )
 SCHEMA: tuple[str, ...] = (
     """CREATE TABLE IF NOT EXISTS meta (
@@ -214,6 +279,54 @@ SCHEMA: tuple[str, ...] = (
     """CREATE TRIGGER IF NOT EXISTS inference_records_are_permanent
     BEFORE DELETE ON inference_records
     BEGIN SELECT RAISE(ABORT, 'inference records are immutable'); END""",
+    # -- Idempotency-Key invocations: bound before any provider call, never unbound -------------
+    """CREATE TABLE IF NOT EXISTS inference_invocations (
+        workspace_id        TEXT NOT NULL,      -- the store's workspace ('' when unbound)
+        operation           TEXT NOT NULL,
+        key_hash            TEXT NOT NULL,      -- sha256 of the key (the key is never stored)
+        request_hash        TEXT NOT NULL,      -- canonical hash of the request first sent with it
+        inference_id        TEXT NOT NULL UNIQUE,
+        addressed_by        TEXT NOT NULL CHECK (addressed_by IN ('version', 'production')),
+        version_id          TEXT NOT NULL REFERENCES workflow_versions(version_id),
+        lineage_id          TEXT NOT NULL,
+        deployment_revision INTEGER,
+        state               TEXT NOT NULL CHECK (state IN ('RESERVED', 'STARTED', 'SUCCEEDED',
+                                                           'FAILED', 'AMBIGUOUS', 'ABANDONED')),
+        owner               TEXT NOT NULL,      -- the fencing token of the process running it
+        lease_expires_at    REAL NOT NULL,
+        created_at          TEXT NOT NULL,
+        updated_at          TEXT NOT NULL,
+        PRIMARY KEY (workspace_id, operation, key_hash)
+    )""",
+    """CREATE TRIGGER IF NOT EXISTS inference_invocations_are_born_reserved_or_rejected
+    BEFORE INSERT ON inference_invocations
+    WHEN NEW.state NOT IN ('RESERVED', 'FAILED') OR (NEW.state = 'FAILED' AND NOT EXISTS (
+        SELECT 1 FROM inference_records WHERE inference_id = NEW.inference_id))
+    BEGIN SELECT RAISE(ABORT, 'an invocation is bound RESERVED or with its record'); END""",
+    """CREATE TRIGGER IF NOT EXISTS inference_invocations_keep_their_identity
+    BEFORE UPDATE ON inference_invocations
+    WHEN NEW.workspace_id IS NOT OLD.workspace_id OR NEW.operation IS NOT OLD.operation
+      OR NEW.key_hash IS NOT OLD.key_hash OR NEW.request_hash IS NOT OLD.request_hash
+      OR NEW.inference_id IS NOT OLD.inference_id OR NEW.addressed_by IS NOT OLD.addressed_by
+      OR NEW.version_id IS NOT OLD.version_id OR NEW.lineage_id IS NOT OLD.lineage_id
+      OR NEW.deployment_revision IS NOT OLD.deployment_revision
+      OR NEW.created_at IS NOT OLD.created_at
+    BEGIN SELECT RAISE(ABORT, 'an idempotency key is bound once'); END""",
+    # every UPDATE (a lease renewal too) is a transition: a finished row never changes again
+    """CREATE TRIGGER IF NOT EXISTS inference_invocations_follow_the_state_machine
+    BEFORE UPDATE ON inference_invocations
+    WHEN (OLD.state || '>' || NEW.state) NOT IN ("""
+    + ", ".join(f"'{t}'" for t in _INVOCATION_TRANSITIONS)
+    + """)
+    BEGIN SELECT RAISE(ABORT, 'invocation state transition not allowed'); END""",
+    """CREATE TRIGGER IF NOT EXISTS inference_invocations_finish_with_their_record
+    BEFORE UPDATE ON inference_invocations
+    WHEN NEW.state IN ('SUCCEEDED', 'FAILED') AND NOT EXISTS (
+        SELECT 1 FROM inference_records WHERE inference_id = NEW.inference_id)
+    BEGIN SELECT RAISE(ABORT, 'a finished invocation has its inference record'); END""",
+    """CREATE TRIGGER IF NOT EXISTS inference_invocations_are_permanent
+    BEFORE DELETE ON inference_invocations
+    BEGIN SELECT RAISE(ABORT, 'an idempotency key is bound once'); END""",
 )
 
 _VERSION_COLS = (
@@ -229,6 +342,10 @@ _EVENT_COLS = (
     "actor, created_at"
 )
 _INFERENCE_COLS = "inference_id, version_id, lineage_id, status, record_json, created_at"
+_INVOCATION_COLS = (
+    "operation, key_hash, request_hash, inference_id, addressed_by, version_id, lineage_id, "
+    "deployment_revision, state, owner, lease_expires_at, created_at, updated_at"
+)
 
 
 class SQLiteDeploymentStore:
@@ -575,6 +692,162 @@ class SQLiteDeploymentStore:
         )
         return InferenceRow(inference_id, version_id, lineage_id, status, record_json, now)
 
+    # -- Idempotency-Key invocations --------------------------------------------------------
+    def invocation(self, operation: str, key_hash: str) -> InvocationRow | None:
+        """The invocation an idempotency key of this workspace is bound to, if any."""
+        with self._connect() as conn:
+            return self._invocation_in(conn, operation, key_hash)
+
+    def _invocation_in(self, c: _Conn, operation: str, key_hash: str) -> InvocationRow | None:
+        row = c.execute(
+            f"SELECT {_INVOCATION_COLS} FROM inference_invocations "
+            "WHERE workspace_id=? AND operation=? AND key_hash=?",
+            (self.workspace_id or "", operation, key_hash),
+        ).fetchone()
+        return _invocation(row) if row is not None else None
+
+    def bind_invocation(
+        self,
+        claim: IdempotencyClaim,
+        *,
+        inference_id: str,
+        addressed_by: str,
+        version_id: str,
+        lineage_id: str,
+        revision: int | None,
+        owner: str,
+        lease_expires_at: float,
+        rejection_json: str | None = None,
+    ) -> InvocationRow | None:
+        """Bind ``claim``'s key to a new invocation - RESERVED, or (``rejection_json``) FAILED
+        together with that rejection's inference record - in one ``BEGIN IMMEDIATE``
+        transaction. If the key is already bound (by any process) nothing is written and that
+        invocation is returned; ``None``: bound now."""
+        now = self.clock()
+
+        def bind(c: _Conn) -> InvocationRow | None:
+            bound = self._invocation_in(c, claim.operation, claim.key_hash)
+            if bound is not None:
+                return bound
+            state = InvocationState.RESERVED
+            if rejection_json is not None:
+                state = InvocationState.FAILED
+                c.execute(
+                    f"INSERT INTO inference_records({_INFERENCE_COLS}) VALUES (?,?,?,?,?,?)",
+                    (inference_id, version_id, lineage_id, "FAILED", rejection_json, now),
+                )
+            c.execute(
+                "INSERT INTO inference_invocations(workspace_id, " + _INVOCATION_COLS + ") "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    self.workspace_id or "",
+                    claim.operation,
+                    claim.key_hash,
+                    claim.request_hash,
+                    inference_id,
+                    addressed_by,
+                    version_id,
+                    lineage_id,
+                    revision,
+                    state.value,
+                    owner,
+                    lease_expires_at,
+                    now,
+                    now,
+                ),
+            )
+            return None
+
+        return self._tx(bind)  # type: ignore[no-any-return]
+
+    def _cas(self, sql: str, params: tuple[Any, ...]) -> bool:
+        """One compare-and-set UPDATE of an invocation; ``True`` iff it matched."""
+        return bool(self._tx(lambda c: c.execute(sql, params).rowcount))
+
+    def renew_invocation(self, inference_id: str, owner: str, lease_expires_at: float) -> bool:
+        """Extend the owner's lease while it runs; ``False``: it no longer owns a live run."""
+        return self._cas(
+            "UPDATE inference_invocations SET lease_expires_at=?, updated_at=? "
+            "WHERE inference_id=? AND owner=? AND state IN ('RESERVED', 'STARTED')",
+            (lease_expires_at, self.clock(), inference_id, owner),
+        )
+
+    def start_invocation(self, inference_id: str, owner: str, lease_expires_at: float) -> bool:
+        """RESERVED -> STARTED, immediately before the first provider request; ``False``: the
+        owner lost the reservation and must send nothing."""
+        return self._cas(
+            "UPDATE inference_invocations SET state='STARTED', lease_expires_at=?, updated_at=? "
+            "WHERE inference_id=? AND owner=? AND state='RESERVED'",
+            (lease_expires_at, self.clock(), inference_id, owner),
+        )
+
+    def take_over_invocation(
+        self, inference_id: str, owner: str, new_owner: str, now_s: float, lease_expires_at: float
+    ) -> bool:
+        """A dead owner's RESERVED invocation (its lease expired at ``now_s``) -> ``new_owner``.
+        Safe: the dead owner never won RESERVED -> STARTED, so it sent nothing."""
+        return self._cas(
+            "UPDATE inference_invocations SET owner=?, lease_expires_at=?, updated_at=? "
+            "WHERE inference_id=? AND owner=? AND state='RESERVED' AND lease_expires_at<=?",
+            (new_owner, lease_expires_at, self.clock(), inference_id, owner, now_s),
+        )
+
+    def abandon_invocation(self, inference_id: str, owner: str, now_s: float) -> bool:
+        """A dead owner's RESERVED invocation -> ABANDONED (it can never run any more)."""
+        return self._cas(
+            "UPDATE inference_invocations SET state='ABANDONED', updated_at=? "
+            "WHERE inference_id=? AND owner=? AND state='RESERVED' AND lease_expires_at<=?",
+            (self.clock(), inference_id, owner, now_s),
+        )
+
+    def mark_ambiguous(self, inference_id: str, now_s: float) -> bool:
+        """A STARTED invocation whose owner's lease expired at ``now_s`` -> AMBIGUOUS."""
+        return self._cas(
+            "UPDATE inference_invocations SET state='AMBIGUOUS', updated_at=? "
+            "WHERE inference_id=? AND state='STARTED' AND lease_expires_at<=?",
+            (self.clock(), inference_id, now_s),
+        )
+
+    def finish_invocation(
+        self, inference_id: str, owner: str, status: str, record_json: str
+    ) -> InferenceRow | None:
+        """The owner's measured outcome: the inference record and the invocation's terminal
+        state commit in ONE transaction. ``None`` (nothing written): ``owner`` does not own it
+        (another process took the reservation over)."""
+        now = self.clock()
+
+        def finish(c: _Conn) -> InferenceRow | None:
+            row = c.execute(
+                "SELECT version_id, lineage_id FROM inference_invocations WHERE inference_id=? "
+                "AND owner=? AND state IN ('RESERVED', 'STARTED', 'AMBIGUOUS')",
+                (inference_id, owner),
+            ).fetchone()
+            if row is None:
+                return None
+            version_id, lineage_id = row
+            c.execute(
+                f"INSERT INTO inference_records({_INFERENCE_COLS}) VALUES (?,?,?,?,?,?)",
+                (inference_id, version_id, lineage_id, status, record_json, now),
+            )
+            c.execute(
+                "UPDATE inference_invocations SET state=?, updated_at=? WHERE inference_id=?",
+                (status, now, inference_id),
+            )
+            return InferenceRow(inference_id, version_id, lineage_id, status, record_json, now)
+
+        return self._tx(finish)  # type: ignore[no-any-return]
+
+
+def _invocation(r: tuple[Any, ...]) -> InvocationRow:
+    return InvocationRow(
+        *r[:8],
+        state=InvocationState(r[8]),
+        owner=r[9],
+        lease_expires_at=r[10],
+        created_at=r[11],
+        updated_at=r[12],
+    )
+
 
 def _version(r: tuple[Any, ...]) -> VersionRow:
     return VersionRow(*r[:6], state=VersionState(r[6]), state_updated_at=r[7])
@@ -588,8 +861,11 @@ __all__ = [
     "DeploymentAction",
     "DeploymentRow",
     "EventRow",
+    "FINISHED",
     "InferenceRow",
     "InvalidTransition",
+    "InvocationRow",
+    "InvocationState",
     "SQLiteDeploymentStore",
     "StaleDeployment",
     "VersionRow",

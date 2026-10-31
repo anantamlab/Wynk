@@ -40,7 +40,7 @@ request -> response function; the HTTP adapter only moves bytes.
     GET  /api/v1/workflows/{version_id}                           immutable workflow version
     POST /api/v1/workflows/{version_id}/stage                     DeploymentChange
     POST /api/v1/workflows/{version_id}/promote                   DeploymentChange
-    POST /api/v1/workflows/{version_id}/invoke                    InvokeWorkflow {inputs}
+    POST /api/v1/workflows/{version_id}/invoke                    InvokeWorkflow (Idempotency-Key)
     GET  /api/v1/deployments/{lineage}
     GET  /api/v1/deployments/{lineage}/history
     POST /api/v1/deployments/{lineage}/rollback                   RollbackDeployment
@@ -75,6 +75,19 @@ created back - the same 201 body plus ``Idempotent-Replayed: true`` - and nothin
 admitted, bound or sent again; the same key with a different body is ``idempotency_conflict``
 (409). The key is bound in the job's creation transaction (``store.jobs``) and is never part of
 the job's definition or identity. Without the header a create behaves exactly as before.
+
+An ``invoke`` (by version or of production) may carry an ``Idempotency-Key`` too, with the same
+key format, workspace scope and ``idempotency_conflict``. Its key is bound - before any provider
+request - to ONE invocation and to the version (and revision) the first request resolved, so a
+retry never runs a version promoted or rolled back later, and never makes a second provider
+request for that invocation. A retry gets the invocation's current state with
+``Idempotent-Replayed: true``: SUCCEEDED -> the stored inference (200; its output is not
+stored, ``output`` is ``null`` and ``output_sha256`` identifies it); FAILED -> the original error
+and inference id; still running -> ``inference_in_progress``; its process died after a provider
+request may have been sent -> ``inference_ambiguous_attempt``, never re-sent; its process died
+before any request -> resumed exactly once on the bound version, or
+``inference_deployment_changed`` if that version no longer serves (all 409). See
+``experiments.deployment`` and ``store.deployments``.
 
 Champion promotion (``experiments.promotion``, stored in ``champions.sqlite3``) takes a COMPLETED
 experiment, selects ONE challenger on validation, opens the test split once for it (and the
@@ -111,7 +124,7 @@ import os
 import re
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO
@@ -239,6 +252,9 @@ ERROR_STATUS: dict[str, int] = {
     "model_binding_failed": 503,
     "inference_backend_unavailable": 503,
     "inference_failed": 502,
+    "inference_in_progress": 409,
+    "inference_ambiguous_attempt": 409,
+    "inference_deployment_changed": 409,
     "output_schema_violation": 502,
     "workflow_version_integrity_error": 500,
     "invalid_feedback": 422,
@@ -320,6 +336,8 @@ class SplitsList(_Strict):
 # stored only as its sha256 and never logged or echoed.
 IDEMPOTENCY_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
 CREATE_EXPERIMENT = "experiments.create"
+INVOKE_VERSION = "workflows.invoke"
+INVOKE_PRODUCTION = "deployments.invoke"
 REPLAYED = (("Idempotent-Replayed", "true"),)
 
 
@@ -335,6 +353,18 @@ def _idempotency_key(request: _Request) -> str | None:
             field="Idempotency-Key",
         )
     return key
+
+
+def _claim(key: str | None, operation: str, request: dict[str, Any]) -> IdempotencyClaim | None:
+    """A request's claim on its ``Idempotency-Key``: the key's sha256 and the canonical hash of
+    the operation plus ``request`` (everything that makes two requests the same one)."""
+    if key is None:
+        return None
+    return IdempotencyClaim(
+        operation=operation,
+        key_hash=hashlib.sha256(key.encode("ascii")).hexdigest(),
+        request_hash=canonical_hash({"operation": operation, **request}),
+    )
 
 
 class CreateExperiment(_Strict):
@@ -375,6 +405,15 @@ class RollbackDeployment(_Strict):
 
 class InvokeWorkflow(_Strict):
     inputs: dict[str, Any]
+
+
+def _invocation(target: str, body: InvokeWorkflow) -> dict[str, Any]:
+    """What makes two invocations the same request: the addressed version or lineage + body."""
+    return {"target": target, "request": body.model_dump(mode="json")}
+
+
+def _invoked(view: BaseModel, replayed: bool) -> ApiResponse:
+    return ApiResponse(200, view.model_dump(mode="json"), headers=REPLAYED if replayed else ())
 
 
 class EvaluateTrigger(_Strict):
@@ -738,7 +777,8 @@ class ProductAPI:
         except (JobError, PromotionError) as exc:
             return _error(exc.code, str(exc))
         except DeploymentError as exc:
-            return _error(exc.code, str(exc), exc.details)
+            res = _error(exc.code, str(exc), exc.details)
+            return replace(res, headers=REPLAYED) if exc.replayed else res
         except MonitoringError as exc:
             return _error(exc.code, str(exc), exc.details)
         except QuotaExceeded as exc:  # #32: refused inside the store's insert transaction
@@ -981,15 +1021,8 @@ class ProductAPI:
         jobs = self._jobs()
         key = _idempotency_key(request)
         body: CreateExperiment = self._json(request, CreateExperiment)
-        claim = None
-        if key is not None:
-            claim = IdempotencyClaim(
-                operation=CREATE_EXPERIMENT,
-                key_hash=hashlib.sha256(key.encode("ascii")).hexdigest(),
-                request_hash=canonical_hash(
-                    {"operation": CREATE_EXPERIMENT, "request": body.model_dump(mode="json")}
-                ),
-            )
+        claim = _claim(key, CREATE_EXPERIMENT, {"request": body.model_dump(mode="json")})
+        if claim is not None:
             replayed = jobs.replay(claim)  # a retry: read back, nothing else runs
             if replayed is not None:
                 return ApiResponse(201, replayed.model_dump(mode="json"), headers=REPLAYED)
@@ -1131,8 +1164,12 @@ class ProductAPI:
 
     def _invoke_workflow(self, request: _Request, args: tuple[str, ...]) -> ApiResponse:
         self._params(request, set())
+        deployments = self._deployments()
+        key = _idempotency_key(request)
         body: InvokeWorkflow = self._json(request, InvokeWorkflow)
-        return _ok(self._deployments().invoke(args[0], body.inputs, request.principal))
+        claim = _claim(key, INVOKE_VERSION, _invocation(args[0], body))
+        view, replayed = deployments.invoke_once(args[0], body.inputs, request.principal, claim)
+        return _invoked(view, replayed)
 
     def _get_deployment(self, request: _Request, args: tuple[str, ...]) -> ApiResponse:
         self._params(request, set())
@@ -1153,8 +1190,14 @@ class ProductAPI:
 
     def _invoke_production(self, request: _Request, args: tuple[str, ...]) -> ApiResponse:
         self._params(request, set())
+        deployments = self._deployments()
+        key = _idempotency_key(request)
         body: InvokeWorkflow = self._json(request, InvokeWorkflow)
-        return _ok(self._deployments().invoke_production(args[0], body.inputs, request.principal))
+        claim = _claim(key, INVOKE_PRODUCTION, _invocation(args[0], body))
+        view, replayed = deployments.invoke_production_once(
+            args[0], body.inputs, request.principal, claim
+        )
+        return _invoked(view, replayed)
 
     def _get_inference(self, request: _Request, args: tuple[str, ...]) -> ApiResponse:
         self._params(request, set())
