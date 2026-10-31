@@ -99,7 +99,7 @@ class GatherExecutor(StageExecutor):
             if self._websearch is None:
                 return _fail(inp, "gather source 'websearch' is not available")
             if self._websearch.drifted():  # nothing is sent or charged
-                return _fail(inp, DRIFTED.format(source="websearch"))
+                return _fail(inp, DRIFTED.format(source="websearch"), kind=FailureKind.PROVIDER_DRIFTED)
             return await _websearch(inp, ctx, self._websearch)
         source = ctx.task.source
         if isinstance(source, InlineSource):
@@ -264,7 +264,7 @@ async def _websearch(inp: ExecutorInput, ctx: RunContext, src: WebSearchSource) 
     try:
         response = checked_response(await asyncio.to_thread(src.search, request), request)
     except ProviderDrifted as exc:  # refused before anything was sent: not charged
-        return _fail(inp, f"websearch: {exc}")
+        return _fail(inp, f"websearch: {exc}", kind=FailureKind.PROVIDER_DRIFTED)
     except (SourceError, ValidationError) as exc:
         return _fail(inp, f"websearch: {_short(exc, 'response')}", usage=spent)
     pages = search_pages(response)
@@ -300,10 +300,16 @@ def _inline(inp: ExecutorInput, ctx: RunContext, source: InlineSource) -> Execut
     )
 
 
-def _fail(inp: ExecutorInput, message: str, **kwargs) -> ExecutorOutput:
+def _fail(
+    inp: ExecutorInput,
+    message: str,
+    *,
+    kind: FailureKind = FailureKind.EXECUTOR_ERROR,
+    **kwargs,
+) -> ExecutorOutput:
     return ExecutorOutput(
         failure=FailureInfo(
-            kind=FailureKind.EXECUTOR_ERROR, message=message, stage_index=inp.stage_index
+            kind=kind, message=message, stage_index=inp.stage_index
         ),
         **kwargs,
     )
