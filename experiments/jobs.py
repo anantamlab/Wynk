@@ -39,11 +39,12 @@ How a unit survives a crash: deterministic re-execution over a write-ahead run l
     its original worker stored the result late, or the runtime's ``replay_proof`` (e.g. a
     deterministic response cache) proves the result without a call.
 
-A live evidence provider that drifts mid-job (``JobBinding.preflight``) is handled like a
-runtime that no longer binds: the next attempt that would use it is refused BEFORE it is written,
-the unit becomes INTERRUPTED/runtime_unavailable, and ``resume`` re-executes over the log once the
-binding reproduces the job identity again - so a refusal, which measures nothing, is never
-stored, scored or observed, and the resumed job equals one the drift never touched.
+A live evidence provider that drifts mid-job is handled like a runtime that no longer binds:
+the next attempt that would use it is refused by ``JobBinding.preflight`` BEFORE it is written.
+A drift landing after preflight is detected as a typed, zero-spend provider refusal; it leaves
+an unscored ERRORED audit row with resolution ``provider_drift_refused``. Both paths interrupt
+the unit with ``runtime_unavailable``, and resume under the original identity reuses completed
+runs and skips those refusal rows. No refused result reaches the optimizer or champion.
 
 There is no exactly-once claim beyond this: a crash between the provider charging and the
 result being committed is reported (ambiguous), never hidden.
@@ -76,7 +77,7 @@ from core.constraints import ConstraintChecker
 from core.dataset import DatasetSplits
 from core.genome import Genome
 from core.models import AllowedModels
-from core.results import EvaluatedRun, RunVersions
+from core.results import EvaluatedRun, FailureKind, RunVersions
 from core.run_contract import ContractSuite, ExecutionTask
 from core.task_contract import TaskContract
 from evaluation.fitness import FitnessFunction
@@ -115,6 +116,7 @@ from experiments.provenance import (
     verify_artifact,
 )
 from memory.priors import PriorUnavailable, StartMode, StartReason, WarmStart
+from runtime.sources import ProviderDrifted
 from store.datasets import Conflict
 from store.jobs import (
     AttemptRow,
@@ -613,12 +615,23 @@ class DurableEvaluate:
 
     def __call__(self, genome: Genome, task: ExecutionTask, trial: int, seed: int) -> EvaluatedRun:
         key = (genome.genome_hash, task.id, trial, seed)
+        lz = self._lease
         with self._lock:
             n = self._counts.get(key, 0)
+            attempt_id = attempt_identity(lz.claim.job_id, self._run_id, *key, n)
+            row = self._stored.get(attempt_id)
+            while (
+                row is not None
+                and row.state is AttemptState.ERRORED
+                and row.resolution == "provider_drift_refused"
+            ):
+                # The old attempt never reached the provider or optimizer. Preserve its
+                # audit row and use a new attempt id under the same scientific run identity.
+                self._consumed.add(attempt_id)
+                n += 1
+                attempt_id = attempt_identity(lz.claim.job_id, self._run_id, *key, n)
+                row = self._stored.get(attempt_id)
             self._counts[key] = n + 1
-        lz = self._lease
-        attempt_id = attempt_identity(lz.claim.job_id, self._run_id, *key, n)
-        row = self._stored.get(attempt_id)
         if row is not None:
             if row.state is not AttemptState.COMPLETED:
                 raise AmbiguousAttempt(f"attempt {attempt_id} ({task.id}) has no stored result")
@@ -640,8 +653,8 @@ class DurableEvaluate:
         if self._preflight is not None:
             try:  # e.g. a drifted live provider: its refusal would measure nothing
                 self._preflight(genome)
-            except Exception as exc:
-                raise RuntimeMismatch(f"{exc}") from exc
+            except ProviderDrifted as exc:
+                raise RuntimeMismatch(str(exc)) from exc
         lz.store.start_attempt(
             lz.claim,
             NewAttempt(
@@ -661,6 +674,23 @@ class DurableEvaluate:
         except Exception as exc:
             lz.store.error_attempt(lz.claim, attempt_id, f"{type(exc).__name__}: {exc}")
             raise
+        if (
+            run.execution.failure is not None
+            and run.execution.failure.kind is FailureKind.PROVIDER_DRIFTED
+        ):
+            # The provider may have drifted after our preflight. Only a provably unsent
+            # refusal is resumable. A refusal after any charged action stays ambiguous:
+            # never silently re-send potentially billed work or treat it as a score.
+            usage = run.execution.budget_usage
+            metrics = run.execution.metrics
+            if usage.tool_calls or usage.model_calls or metrics.model_calls:
+                raise AmbiguousAttempt(
+                    "provider drift after charged work; attempt spend must be resolved"
+                )
+            lz.store.refuse_provider_drift(
+                lz.claim, attempt_id, run.execution.failure.message
+            )
+            raise RuntimeMismatch(run.execution.failure.message)
         timing = self._inner_timing(genome, task, trial, seed) if self._inner_timing else None
         lz.store.complete_attempt(
             lz.claim,
