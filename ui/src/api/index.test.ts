@@ -30,6 +30,8 @@ describe("adapter selection", () => {
     window.history.replaceState(null, "", "/projects?api=mock&mockLatency=0");
     expect(api().mode).toBe("mock");
     expect(api().experiments).toBe("simulated");
+    // the mock has no lifecycle routes: live screens can never render over mock data
+    expect(api().lifecycle).toBeNull();
     const projects = await api().listProjects();
     expect(projects.map((p) => p.id)).toEqual(["p-support", "p-invoices"]);
     expect(fetch).not.toHaveBeenCalled();

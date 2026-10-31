@@ -78,10 +78,13 @@ export function ErrorState({
   message,
   code,
   details,
+  hint,
   onRetry,
 }: {
   title?: string;
   message: string;
+  /** what the person can do about it */
+  hint?: string;
   /** stable error code from the API, shown so the real reason is never hidden */
   code?: string;
   details?: Record<string, string | number | null>;
@@ -94,6 +97,7 @@ export function ErrorState({
       <div className="min-w-0 flex-1">
         <p className="font-semibold text-ink">{title}</p>
         <p className="mt-0.5 break-words text-ink-soft">{message}</p>
+        {hint && <p className="mt-1 text-xs text-ink-soft">{hint}</p>}
         {(code || facts.length > 0) && (
           <p className="mt-1 font-mono text-[11px] text-ink-soft">
             {code && <span data-testid="error-code">{code}</span>}
@@ -118,8 +122,19 @@ export function ErrorState({
 /** An adapter error with its heading, the server's own message, the stable code and details. */
 export function ApiErrorState({ error, title, onRetry }: { error: unknown; title?: string; onRetry?: () => void }) {
   if (error instanceof ApiError)
-    return <ErrorState title={title ?? error.title} message={error.message} code={error.code} details={error.details} onRetry={onRetry} />;
+    return (
+      <ErrorState title={title ?? error.title} message={error.message} code={error.code} details={error.details} hint={authHint(error)} onRetry={onRetry} />
+    );
   return <ErrorState title={title ?? "Something went wrong"} message={errorMessage(error)} onRetry={onRetry} />;
+}
+
+/** #32: the browser never holds a key; the UI's server (dev proxy) sends the workspace's key. */
+export function authHint(error: ApiError): string | undefined {
+  if (error.status === 401 || error.code === "unauthenticated")
+    return "The UI's server sent no valid API key (WYNK_API_KEY on the dev server). Nothing was read or changed.";
+  if (error.status === 403 || error.code === "insufficient_scope")
+    return "The API key the UI's server uses lacks this permission. Nothing was changed. A workspace owner can issue a key with the needed scope.";
+  return undefined;
 }
 
 export function EmptyState({ icon: IconCmp, title, children, action }: { icon: Icon; title: string; children?: ReactNode; action?: ReactNode }) {

@@ -4,7 +4,10 @@ import type { MockOptions } from "./mock/mockApi";
 import type { Dataset, DatasetVersion } from "./types";
 
 export { ApiError, ERROR_COPY, errorMessage, type ApiErrorKind, type WynkApi } from "./client";
-export { EXPERIMENT_BACKEND_MISSING } from "./live";
+export type { InvokeTarget, LifecycleApi, Sent } from "./client";
+export type * from "./contract/lifecycle";
+export type { DatasetSpecWire, FieldWire } from "./contract/wire";
+export { JOB_STATES, STRATEGIES, TERMINAL_JOB_STATES } from "./contract/lifecycle";
 export type * from "./types";
 
 /*
@@ -46,13 +49,14 @@ const METHODS = [
   "cancelExperiment",
   "getResults",
   "listWorkflows",
-] as const satisfies readonly Exclude<keyof WynkApi, "mode" | "experiments">[];
+] as const satisfies readonly Exclude<keyof WynkApi, "mode" | "experiments" | "lifecycle">[];
 
 /** The mock adapter, loaded on first use: in live mode its code and fixtures are never fetched. */
 function lazyMockApi(options: MockOptions): WynkApi {
   let loaded: Promise<WynkApi> | null = null;
   const load = () => (loaded ??= import("./mock/mockApi").then((m) => m.createMockApi(options)));
-  const adapter: Record<string, unknown> = { mode: "mock", experiments: "simulated" };
+  // the mock never fakes the real lifecycle: live screens are unreachable in mock mode
+  const adapter: Record<string, unknown> = { mode: "mock", experiments: "simulated", lifecycle: null };
   for (const name of METHODS)
     adapter[name] = async (...args: unknown[]) => {
       const mock = await load();
