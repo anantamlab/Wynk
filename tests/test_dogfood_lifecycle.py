@@ -1053,6 +1053,89 @@ def test_a_websearch_drift_during_a_job_interrupts_it_and_resume_matches_an_undi
     assert len(provider.requests) - calls == ref_calls  # no model call was sent twice
 
 
+
+def test_websearch_drift_between_preflight_and_search_is_not_scored(
+    tmp_path, provider, monkeypatch
+):
+    """A drift that lands after preflight makes a durable, zero-spend refusal; replay
+    skips the refusal but restores the exact scientific result, with no extra calls."""
+    from runtime.backends.brave_search import BraveSearchConfig
+    from runtime.sources import PinnedWebSearchSource
+    from tests.dogfood_support import WEBSEARCH_B, FakeBrave
+
+    contract = {"workflow": {"allowed_sources": ["websearch"]}}
+    ref_brave = FakeBrave()
+    ref = websearch_world(tmp_path / "ref", provider, ref_brave)
+    ref_ws, ref_key = ref.workspace("Dogfood A", "owner-a@example.test")
+    body = ref.experiment_body(ref.dataset(ref_key), ("aco",), **contract)
+    start = len(provider.requests)
+    ref_job = ref.ok(ref_key, "POST", "experiments", body, 201)
+    ref.run(ref_ws, ref_job["job_id"])
+    expected_calls = len(provider.requests) - start
+    expected = ref.ok(ref_key, "GET", f"experiments/{ref_job['job_id']}/artifact")["artifact"]["runs"]
+
+    brave = FakeBrave()
+    w = websearch_world(tmp_path / "drift", provider, brave)
+    ws, key = w.workspace("Dogfood A", "owner-a@example.test")
+    body = w.experiment_body(w.dataset(key), ("aco",), **contract)
+    job = w.ok(key, "POST", "experiments", body, 201)
+    original = w.source.config
+    real_search = PinnedWebSearchSource.search
+    drifted = [False]
+    start = len(provider.requests)
+
+    def drift_after_preflight(src, request):
+        if not drifted[0]:
+            drifted[0] = True
+            w.source.config = BraveSearchConfig(api_key=original.api_key, endpoint=WEBSEARCH_B)
+        return real_search(src, request)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(PinnedWebSearchSource, "search", drift_after_preflight)
+        w.run(ws, job["job_id"])
+    view = w.ok(key, "GET", f"experiments/{job['job_id']}")
+    assert drifted[0] and (view["state"], view["reason"]) == (
+        "INTERRUPTED", "runtime_unavailable"
+    ), view
+    assert not brave.requests and len(provider.requests) == start
+
+    store = w.api(ws).jobs.store
+    attempts = [
+        a
+        for u in store.get_job(job["job_id"]).units
+        for a in store.attempts(u.job_id, u.strategy, u.seed)
+    ]
+    assert len(attempts) == 1
+    assert attempts[0].state.value == "ERRORED"
+    assert attempts[0].resolution == "provider_drift_refused"
+    assert attempts[0].result_json is None and attempts[0].entry_json is None
+
+    w.source.config = original
+    w.ok(key, "POST", f"experiments/{job['job_id']}/resume")
+    w.run(ws, job["job_id"])
+    assert w.ok(key, "GET", f"experiments/{job['job_id']}")["state"] == "COMPLETED"
+    actual = w.ok(key, "GET", f"experiments/{job['job_id']}/artifact")["artifact"]["runs"]
+
+    def projection(runs):
+        return [
+            (r["strategy"], r["champion"]["genome_hash"],
+             [(c["genome_hash"], c["validation"]["score_mean"]) for c in r["candidates"]],
+             r["usage"]["model_calls"], r["usage"]["tool_calls"])
+            for r in runs
+        ]
+
+    assert projection(actual) == projection(expected)
+    assert len(brave.requests) == len(ref_brave.requests)
+    assert len(provider.requests) - start == expected_calls
+    attempts = [
+        a
+        for u in store.get_job(job["job_id"]).units
+        for a in store.attempts(u.job_id, u.strategy, u.seed)
+    ]
+    assert len([a for a in attempts if a.resolution == "provider_drift_refused"]) == 1
+    assert not any(a.result_json for a in attempts if a.resolution == "provider_drift_refused")
+
+
 # == 7. memory lifecycle =========================================================================
 def test_memory_is_reused_only_for_the_exact_dataset_model_and_runtime(world):
     from memory.priors import RetireReason, row_hash
