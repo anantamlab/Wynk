@@ -96,7 +96,16 @@ deployment-changed or conflicting outcome is sent again only through an explicit
 An uncertain request (sent but unconfirmed, or ambiguous) is kept in `sessionStorage` for this tab,
 per workspace and operation (`src/lib/pendingKeys.ts`): only its key, a digest of the request and
 its stage, never inputs, outputs or credentials. After a reload, the same values go out with the
-same key; different values need the explicit new-request action. A resource that a 401/403 (or
+same key; different values need the explicit new-request action.
+
+The record is a precondition, so these requests fail closed: no durable recovery record, no
+request. Before each request the UI reads the workspace (`GET /workspace`, a valid `ws-…` id), stores
+the record and reads it back. If the workspace cannot be read (401, 403, 500, network) or storage is
+missing, denied, full, does not read back, or holds a damaged record, zero requests go out. The
+screen shows `not_sent` with the reason (`workspace_unavailable`, `storage_unavailable`,
+`storage_write_failed`, `storage_verify_failed`, `storage_corrupted`, `workspace_changed`) and what
+to do. There is no memory-only fallback. A damaged record or a changed workspace offers only the
+explicit new-request action, with a duplicate-run warning. A resource that a 401/403 (or
 another refusal) answers is removed from the screen and is not polled again
 (`src/lib/useResource.ts`); only network and server faults keep the last answer, marked stale.
 

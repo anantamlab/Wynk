@@ -8,7 +8,7 @@ import { createMockApi } from "@/api/mock/mockApi";
 import { routes } from "@/router";
 import { LIFECYCLE, fail, lc, ok, recorded, server, v1, type Call, type Reply } from "@/test/lifecycleApi";
 import { body as v1Body } from "@/test/productApi";
-import { forgetWorkspaceId } from "@/lib/pendingKeys";
+import { storageKey } from "@/lib/pendingKeys";
 
 /*
   The live screens against the product API's real lifecycle responses. Each test edits a recorded
@@ -49,7 +49,6 @@ afterEach(() => {
   setApi(null);
   vi.unstubAllGlobals();
   sessionStorage.clear(); // pending idempotent requests (lib/pendingKeys.ts)
-  forgetWorkspaceId();
 });
 
 describe("live experiments", () => {
@@ -101,6 +100,31 @@ describe("live experiments", () => {
     expect(b.splits_hash).toBe(versionOne);
     expect(b.plan.expected_model_hash).toBe(lc("list_models").models[0].model_hash);
     expect(b.contract.constraints).toMatchObject({ maximum_model_calls: expect.any(Number), maximum_retries: expect.any(Number) });
+  });
+
+  it.each([
+    ["GET /workspace refused", { [`GET ${P}/workspace`]: fail(403, "forbidden") }, "workspace_unavailable"],
+    ["storage that is damaged", {}, "storage_corrupted"],
+  ])("%s: zero experiments are created", async (_, table, reason) => {
+    if (reason === "storage_corrupted") sessionStorage.setItem(storageKey((lc("current_workspace").workspace as { workspace_id: string }).workspace_id, `create-experiment:${PID}`), "{damaged");
+    const s = renderLive(`/projects/${PID}/experiments/new?dataset=support-tickets`, {
+      [`GET ${P}/projects/${PID}/datasets`]: v1("list_datasets"),
+      [`GET ${P}/models`]: recorded("list_models"),
+      [`GET ${P}/datasets/support-tickets/versions/1`]: v1("get_version"),
+      [`GET ${P}/datasets/support-tickets/versions/1/splits`]: v1("list_splits"),
+      [`POST ${P}/experiments`]: recorded("create_experiment"),
+      ...table,
+    });
+    const user = userEvent.setup();
+    await user.selectOptions(await screen.findByLabelText("Dataset version", {}, T), "1");
+    await user.type(screen.getByLabelText("Instructions"), "Route the ticket.");
+    const submit = screen.getByRole("button", { name: "Create experiment" });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await user.click(submit);
+    const status = await screen.findByTestId("send-status", {}, T);
+    expect(status).toHaveAttribute("data-phase", "not_sent");
+    expect(status).toHaveAttribute("data-reason", reason);
+    expect(posts(s.calls, "/experiments")).toEqual([]);
   });
 
   it("an interrupted job shows the server's reason and unproven calls; Resume is a deliberate action", async () => {
@@ -312,6 +336,40 @@ describe("live invocation (Phase 1 idempotent contract)", () => {
     expect(k1).toMatch(/^inf/);
     expect(k2).not.toBe(k1);
     expect(invokes(s.calls).map((c) => c.body)).toEqual([{ inputs: LIFECYCLE.new_order }, { inputs: LIFECYCLE.new_order }]);
+  });
+
+  it.each([
+    ["401", fail(401, "unauthenticated")],
+    ["403", fail(403, "forbidden")],
+    ["500", fail(500, "internal_error")],
+    ["a network failure", new TypeError("Failed to fetch")],
+  ])("GET /workspace failing with %s: zero invocations, and the person is told why", async (_, reply) => {
+    const s = renderLive(`/projects/${PID}/workflows`, { ...deploymentServer("production").table, [`GET ${P}/workspace`]: reply, [`POST ${P}/deployments/${LINEAGE}/invoke`]: recorded("invoke_production") });
+    const { user, panel } = await fill();
+    await user.click(within(panel).getByRole("button", { name: /^Run on production/ }));
+    const status = await within(panel).findByTestId("send-status", {}, T);
+    expect(status).toHaveAttribute("data-phase", "not_sent");
+    expect(status).toHaveAttribute("data-reason", "workspace_unavailable");
+    expect(status).toHaveTextContent("nothing was sent");
+    expect(invokes(s.calls)).toEqual([]);
+    expect(Object.keys(sessionStorage)).toEqual([]);
+  });
+
+  it("storage that refuses the recovery record: zero invocations, and the person is told how to fix it", async () => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("full", "QuotaExceededError");
+    });
+    try {
+      const s = renderLive(`/projects/${PID}/workflows`, { ...deploymentServer("production").table, [`POST ${P}/deployments/${LINEAGE}/invoke`]: recorded("invoke_production") });
+      const { user, panel } = await fill();
+      await user.click(within(panel).getByRole("button", { name: /^Run on production/ }));
+      const status = await within(panel).findByTestId("send-status", {}, T);
+      expect(status).toHaveAttribute("data-reason", "storage_write_failed");
+      expect(within(status).getByTestId("error-code").parentElement).toHaveTextContent("storage_write_failed · QuotaExceededError");
+      expect(invokes(s.calls)).toEqual([]);
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 
   it("polls inference_in_progress with the same key and shows the server's replayed output", async () => {
