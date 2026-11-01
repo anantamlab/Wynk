@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -8,6 +8,7 @@ import { createMockApi } from "@/api/mock/mockApi";
 import { routes } from "@/router";
 import { LIFECYCLE, fail, lc, ok, recorded, server, v1, type Call, type Reply } from "@/test/lifecycleApi";
 import { body as v1Body } from "@/test/productApi";
+import { forgetWorkspaceId } from "@/lib/pendingKeys";
 
 /*
   The live screens against the product API's real lifecycle responses. Each test edits a recorded
@@ -47,6 +48,8 @@ const posts = (calls: Call[], route: string) => calls.filter((c) => c.route === 
 afterEach(() => {
   setApi(null);
   vi.unstubAllGlobals();
+  sessionStorage.clear(); // pending idempotent requests (lib/pendingKeys.ts)
+  forgetWorkspaceId();
 });
 
 describe("live experiments", () => {
@@ -251,6 +254,38 @@ describe("live invocation (Phase 1 idempotent contract)", () => {
     return { user, panel };
   };
   const invokes = (calls: Call[]) => posts(calls, `/deployments/${LINEAGE}/invoke`);
+
+  it("a reload while the invocation is in flight keeps its key: the same values recover it, different ones are not sent", async () => {
+    const path = `/projects/${PID}/workflows`;
+    const route = `POST ${P}/deployments/${LINEAGE}/invoke`;
+    const before = renderLive(path, { ...deploymentServer("production").table, [route]: () => new Promise<Reply>(() => {}) });
+    const first = await fill();
+    await first.user.click(within(first.panel).getByRole("button", { name: /^Run on production/ }));
+    await waitFor(() => expect(invokes(before.calls)).toHaveLength(1));
+    const key = invokes(before.calls)[0].headers.get("Idempotency-Key")!;
+    expect(Object.values(sessionStorage).join()).not.toContain(Object.values(LIFECYCLE.new_order)[0]); // the key, never the inputs
+
+    cleanup(); // the page reloads; the answer never arrived
+    const after = renderLive(path, { ...deploymentServer("production").table, [route]: recorded("invoke_production", { "Idempotent-Replayed": "true" }) });
+    const panel = await screen.findByTestId("invoke-panel", {}, T);
+    await waitFor(() => expect(within(panel).getByTestId("send-status")).toHaveAttribute("data-phase", "recovered"));
+    expect(within(panel).getByTestId("idempotency-key")).toHaveTextContent(key);
+
+    const { user } = await fill();
+    const run = within(panel).getByRole("button", { name: /^Run on production/ });
+    const [field] = Object.keys(LIFECYCLE.new_order);
+    const box = within(panel).getByRole("textbox", { name: new RegExp(`^${field}`) });
+    await user.type(box, "!"); // different values while the first is unconfirmed
+    expect(run).toBeDisabled();
+    expect(within(panel).getByTestId("send-blocked")).toHaveTextContent(key);
+    await user.type(box, "{Backspace}"); // the same values again
+    expect(run).toBeEnabled();
+    await user.click(run);
+    expect(await within(panel).findByTestId("inference-output", {}, T)).toHaveTextContent('"answer": "Lincoln"');
+    expect(within(panel).getByTestId("send-status")).toHaveAttribute("data-phase", "replayed");
+    expect(invokes(after.calls).map((c) => c.headers.get("Idempotency-Key"))).toEqual([key]); // recovered, never a new key
+    expect(Object.keys(sessionStorage).filter((k) => k.startsWith("wynk.pending-request.v1:"))).toEqual([]);
+  });
 
   it("an ambiguous invocation is never resent; only the explicit new-key action runs it again", async () => {
     const d = deploymentServer("production");

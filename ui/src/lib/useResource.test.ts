@@ -46,19 +46,49 @@ describe("useResource polling", () => {
     expect(result.current).toMatchObject({ state: "ready", data: "RUNNING" });
   });
 
-  it.each(["unauthenticated", "insufficient_scope", "job_not_found", "contract_mismatch"])(
-    "a refused poll (%s) stops polling and is not retried behind the person's back",
-    async (code) => {
-      const load = vi.fn<() => Promise<string>>().mockResolvedValueOnce("RUNNING").mockRejectedValue(new ApiError(code, `${code} (test)`));
-      const { result } = renderHook(() => useResource(load, [], { pollMs: 100, shouldPoll: () => true }));
-      await flush();
-      await advance(100); // the poll is refused: the last answer stays, marked stale
-      expect(result.current).toMatchObject({ state: "ready", data: "RUNNING" });
-      expect(result.current.state === "ready" && result.current.stale).toMatchObject({ code });
-      await advance(10_000);
-      expect(load).toHaveBeenCalledTimes(2);
-    },
-  );
+  const refused = (code: string, status: number) => new ApiError(code, `${code} (test)`, { status });
+
+  it.each([
+    ["unauthenticated", 401],
+    ["insufficient_scope", 403],
+    ["job_not_found", 404],
+    ["contract_mismatch", 200],
+  ])("a later poll refused with %s (%i) removes the cached answer and stops polling", async (code, status) => {
+    const load = vi.fn<() => Promise<string>>().mockResolvedValueOnce("RUNNING").mockRejectedValue(refused(code, status));
+    const { result } = renderHook(() => useResource(load, [], { pollMs: 100, shouldPoll: () => true }));
+    await flush();
+    expect(result.current).toMatchObject({ state: "ready", data: "RUNNING" });
+    await advance(100); // the permission is gone: the data the person may no longer see goes too
+    expect(result.current).toMatchObject({ state: "error", data: null });
+    expect(result.current.state === "error" && result.current.cause).toMatchObject({ code });
+    await advance(10_000);
+    expect(load).toHaveBeenCalledTimes(2); // never polled again behind the person's back
+  });
+
+  it.each([
+    ["unauthenticated", 401],
+    ["insufficient_scope", 403],
+  ])("a first fetch refused with %s (%i) is an error and is not polled", async (code, status) => {
+    const load = vi.fn<() => Promise<string>>().mockRejectedValue(refused(code, status));
+    const { result } = renderHook(() => useResource(load, [], { pollMs: 100, shouldPoll: () => true }));
+    await flush();
+    expect(result.current).toMatchObject({ state: "error", data: null });
+    expect(result.current.state === "error" && result.current.cause).toMatchObject({ code });
+    await advance(10_000);
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it("after a refusal, an explicit reload asks again and shows the answer when access is back", async () => {
+    const load = vi.fn<() => Promise<string>>().mockResolvedValueOnce("RUNNING").mockRejectedValueOnce(refused("unauthenticated", 401)).mockResolvedValue("RUNNING");
+    const { result } = renderHook(() => useResource(load, [], { pollMs: 100, shouldPoll: () => false }));
+    await flush();
+    result.current.reload();
+    await flush();
+    expect(result.current.state).toBe("error");
+    result.current.reload();
+    await flush();
+    expect(result.current).toMatchObject({ state: "ready", data: "RUNNING" });
+  });
 
   it("a null answer is an answer, not an error", async () => {
     const { result } = renderHook(() => useResource(async () => null, []));

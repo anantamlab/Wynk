@@ -2,7 +2,7 @@ import { ArrowClockwise, Question, Spinner, Warning } from "@phosphor-icons/reac
 import type { ReactNode } from "react";
 import { ApiError } from "@/api";
 import { ApiErrorState } from "@/components/app/ui";
-import type { SendState } from "@/lib/idempotency";
+import type { Block, SendState } from "@/lib/idempotency";
 
 /**
  * What happened to an idempotent request, said plainly. Nothing here resends on its own except
@@ -13,17 +13,60 @@ export function SendStatus<T>({
   noun,
   onRetry,
   onNewKey,
+  block = null,
 }: {
   state: SendState<T>;
   /** "experiment" / "invocation" */
   noun: string;
   /** resend with the SAME key (unresolved) */
   onRetry: () => void;
-  /** send again with a NEW key (deliberate) */
+  /** send the form as it is now with a NEW key (deliberate) */
   onNewKey: () => void;
+  /** why the page's submit button is disabled for the form as it is now */
+  block?: Block;
 }) {
   if (state.phase === "idle") return null;
+  const status = <Status state={state} noun={noun} onRetry={onRetry} onNewKey={onNewKey} />;
+  if (block !== "other_pending") return status;
+  return (
+    <div className="space-y-2">
+      {status}
+      <p data-testid="send-blocked" className="text-xs text-ink-soft">
+        These values differ from the unconfirmed {noun} (Idempotency-Key <span className="font-mono">{state.key}</span>
+        ). Submit the same values to recover it with its key, or send these values as a new request with a new key.
+      </p>
+    </div>
+  );
+}
+
+function Status<T>({ state, noun, onRetry, onNewKey }: { state: Exclude<SendState<T>, { phase: "idle" }>; noun: string; onRetry: () => void; onNewKey: () => void }) {
   const key = <KeyLine value={state.key} />;
+  if (state.phase === "recovered")
+    return state.outcome === "ambiguous" ? (
+      <Box phase="recovered-ambiguous" icon={<Warning size={18} weight="fill" className="mt-0.5 shrink-0 text-warn" aria-hidden="true" />}>
+        <p className="font-semibold">Outcome unknown (before the page reloaded)</p>
+        <p className="text-ink-soft">
+          A model call for this {noun} may have reached the provider, and its result was never stored. Wynk does not resend it. Running it again
+          is a new request with a new key and may call the model again.
+        </p>
+        {key}
+        <button type="button" className="btn btn-quiet btn-sm mt-2" onClick={onNewKey}>
+          Run again with a new key
+        </button>
+      </Box>
+    ) : (
+      <Box phase="recovered" icon={<Question size={18} weight="fill" className="mt-0.5 shrink-0 text-warn" aria-hidden="true" />}>
+        <p className="font-semibold">Not confirmed before the page reloaded</p>
+        <p className="text-ink-soft">
+          A {noun} was sent and its answer never arrived. The server may already have it. Submit the same values again: they go out with the
+          same key, so the server answers with the original {noun} instead of starting a second one. Wynk kept only the key, not the values.
+        </p>
+        {key}
+        <button type="button" className="btn btn-quiet btn-sm mt-2" onClick={onNewKey}>
+          Send the current values as a new request (new key)
+        </button>
+      </Box>
+    );
   if (state.phase === "sending")
     return (
       <div role="status" data-testid="send-status" data-phase="sending" className="space-y-1 text-xs text-ink-soft">
@@ -55,9 +98,14 @@ export function SendStatus<T>({
             key, so the server answers with the original {noun} instead of starting a second one.
           </p>
           {key}
-          <button type="button" className="btn btn-quiet btn-sm mt-2" onClick={onRetry}>
-            <ArrowClockwise size={14} aria-hidden="true" /> Retry with the same key
-          </button>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button type="button" className="btn btn-quiet btn-sm" onClick={onRetry}>
+              <ArrowClockwise size={14} aria-hidden="true" /> Retry with the same key
+            </button>
+            <button type="button" className="btn btn-quiet btn-sm" onClick={onNewKey}>
+              Send the current values as a new request (new key)
+            </button>
+          </div>
         </Box>
       );
     case "ambiguous":

@@ -35,10 +35,10 @@ npm run test:e2e   # Playwright: starts `python -m api.product` on a fresh data 
 | `/projects/:id/datasets` | registered datasets: format, rows, columns, latest version, row-id source |
 | `/projects/:id/datasets/new` | **Upload → Inspect → Map columns → Register**: the file's bytes go to the API, which infers types, nullability, row count, content hash and a preview; you choose roles (input, target, context, row id) and register. `?upload=` keeps the upload across reloads |
 | `/projects/:id/datasets/:datasetId` | **Create splits**, then the dataset: versions (`?version=`), content and identity hashes, row-id source, durable splits with server-computed sizes, roles (changing them registers a new version), preview |
-| `/projects/:id/experiments/new` | *(mock only)* task type, instructions, evaluator, **hard constraints** (must hold) vs **optimization preference** (objective, balanced weights), models, budget, splits |
-| `/projects/:id/experiments/:experimentId` | *(mock only)* run status, best quality/cost/latency, learning curve, champion graph, search (ACO) summary, candidate table |
-| `/projects/:id/experiments/:experimentId/results` | *(mock only)* fixed baseline vs random search vs Wynk on optimization, validation and held-out test; champion; *Why this workflow?* |
-| `/projects/:id/workflows` | *(mock only)* validated workflows and champions |
+| `/projects/:id/experiments/new` | live: dataset version, splits, pinned registry model, task, evaluator, strategies, budget caps; created with an `Idempotency-Key`. Mock: task type, instructions, evaluator, **hard constraints** vs **optimization preference**, models, budget, splits |
+| `/projects/:id/experiments/:experimentId` | live: the server's job state, progress and attempts, polled; cancel and resume. Mock: simulated run status, learning curve, champion graph, candidate table |
+| `/projects/:id/experiments/:experimentId/results` | live: the stored artifact (verified by the server), scores, costs, provenance, held-out promotion. Mock: simulated baseline vs random search vs Wynk |
+| `/projects/:id/workflows` | live: champions, workflow versions, publish / stage / promote / roll back with `expected_revision`, and idempotent inference. Mock: validated workflows and champions |
 | `/playground` | the original ask-a-question chat demo (`?demo` replays it without a backend) |
 
 Workflow states follow the split policy in `core/dataset.py`: **Candidate** (measured on the
@@ -78,17 +78,27 @@ read backend JSON.
   hides the real reason.
 - `src/api/live.ts` – **the default.** One method per product API route under `/api/v1`
   (`VITE_WYNK_API_BASE` overrides the base): projects, upload, inspect, register, datasets and
-  versions, splits. Experiment methods reject with `experiment_backend_unavailable` without making a
-  request. A failure is shown as a failure: there is no fallback to mock data.
+  versions, splits, and (`lifecycle`) experiments, results, promotion, workflows, deployments,
+  inference and the workspace. A failure is shown as a failure: there is no fallback to mock data.
 - `src/api/mock/` – only with `?api=mock` or `VITE_WYNK_API=mock`, for automated tests and demos.
   Loaded lazily, so live mode never downloads it. In-memory fixtures, the same dataset lifecycle and
   error codes as the product API (`inspect.ts` stands in for the server's parser), and a seeded,
   simulated search. Invented numbers, nothing persisted, resets on reload. The UI shows a **Mock
   data** badge, and every experiment screen says the run is simulated.
 
-Experiments (configure, run, results, workflows) have no backend yet: running them on uploaded
-datasets is blocked on Issues #20–#23. With the live API those screens explain that and link the
-issues; they never show a simulated run as if it were real.
+With the live API, the experiment and workflow screens use the product API's experiment,
+promotion, workflow, deployment and inference routes (`src/api/contract/lifecycle.ts`). They never
+show a simulated run as if it were real.
+
+Idempotent requests (experiment creation, inference; `src/lib/idempotency.ts`) take one
+`Idempotency-Key` per submission and retry a lost answer with the same key. An ambiguous,
+deployment-changed or conflicting outcome is sent again only through an explicit "new key" action.
+An uncertain request (sent but unconfirmed, or ambiguous) is kept in `sessionStorage` for this tab,
+per workspace and operation (`src/lib/pendingKeys.ts`): only its key, a digest of the request and
+its stage, never inputs, outputs or credentials. After a reload, the same values go out with the
+same key; different values need the explicit new-request action. A resource that a 401/403 (or
+another refusal) answers is removed from the screen and is not polled again
+(`src/lib/useResource.ts`); only network and server faults keep the last answer, marked stale.
 
 Where presentation differs from the contract, the conversion happens in one place:
 
