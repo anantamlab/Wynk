@@ -4,7 +4,16 @@ import { ApiError, type Sent } from "@/api";
 import { backoffMs, IDEMPOTENCY_KEY, newIdempotencyKey, sendIdempotent, useIdempotentSend, type Persist, type RetryPolicy } from "./idempotency";
 import { loadPending, readPending, requestDigest, storageKey } from "./pendingKeys";
 
-const err = (code: string, details: Record<string, string | number | null> = {}) => new ApiError(code, `${code} (test)`, { details });
+/** the client's own codes; every other code is the Wynk API's answer (its envelope, api/product.py ERROR_STATUS) */
+const CLIENT = new Set(["network_error", "bad_response", "contract_mismatch", "request_not_sent", "internal_client_error"]);
+const STATUS: Record<string, number> = { unauthenticated: 401, insufficient_scope: 403, deployment_not_found: 404, quota_exceeded: 429, inference_failed: 502 };
+STATUS.storage_error = STATUS.internal_error = 500;
+STATUS.inference_backend_unavailable = 503;
+for (const c of ["inference_ambiguous_attempt", "ambiguous_attempt", "inference_deployment_changed", "idempotency_conflict", "inference_in_progress"]) STATUS[c] = 409;
+const err = (code: string, details: Record<string, string | number | null> = {}) =>
+  CLIENT.has(code)
+    ? new ApiError(code, `${code} (test)`, { details, status: code === "contract_mismatch" ? 200 : null })
+    : new ApiError(code, `${code} (test)`, { details, status: STATUS[code] ?? 422, fromServer: true });
 const done = <T>(value: T, replayed = false): Sent<T> => ({ value, replayed });
 
 /** a policy whose waits are recorded, not slept */
@@ -81,12 +90,44 @@ describe("sendIdempotent", () => {
     ["unauthenticated", "refused"],
     ["insufficient_scope", "refused"],
     ["inference_failed", "refused"],
+    // it may have run: kept unresolved with its key, never resent automatically (it would fail the same way)
+    ["contract_mismatch", "unresolved"],
+    ["internal_client_error", "unresolved"],
+    ["internal_error", "unresolved"],
+    // proven before dispatch
+    ["request_not_sent", "refused"],
   ])("never resends after %s (%s)", async (code, kind) => {
     const { p, waits } = policy();
     const { send } = script(code);
     expect((await sendIdempotent("k-4", send, p)).kind).toBe(kind);
     expect(send).toHaveBeenCalledTimes(1);
     expect(waits).toEqual([]);
+  });
+
+  it("an unexpected client exception after the request left is unresolved, with its key", async () => {
+    const send = vi.fn<(key: string) => Promise<Sent<{ id: string }>>>(async () => {
+      throw new TypeError("Cannot read properties of undefined (reading 'job_id')");
+    });
+    expect(await sendIdempotent("k-5", send, policy().p)).toMatchObject({ kind: "unresolved", key: "k-5", error: { code: "internal_client_error" } });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["unauthenticated", "unresolved"], // given before the key is read: it says nothing about the first attempt
+    ["insufficient_scope", "unresolved"],
+    ["deployment_not_found", "unresolved"],
+    ["quota_exceeded", "unresolved"],
+    ["inference_backend_unavailable", "unresolved"],
+    ["contract_mismatch", "unresolved"],
+    ["request_not_sent", "unresolved"], // this attempt was not sent, the first may have run
+    ["invalid_inference_request", "refused"], // the same body is refused the same way: it never ran
+    ["inference_failed", "refused"], // the server's answer about this key (a FAILED run replayed)
+  ])("after an attempt that may have run, %s is %s", async (code, kind) => {
+    const { send, keys } = script("network_error", code);
+    expect((await sendIdempotent("k-6", send, policy().p)).kind).toBe(kind);
+    expect(keys).toEqual(["k-6", "k-6"]);
+    const resend = script(code); // a resend of an unresolved or recovered request (mayHaveRun)
+    expect((await sendIdempotent("k-6", resend.send, policy().p, undefined, true)).kind).toBe(kind);
   });
 });
 
@@ -263,6 +304,21 @@ describe("useIdempotentSend across a reload (sessionStorage, per workspace and o
     first.unmount();
     const after = mount();
     await waitFor(() => expect(after.result.current.state).toMatchObject({ phase: "recovered", key: keys[0], outcome: "sending" }));
+  });
+
+  it("another operation on the same screen (another lineage) never takes over the first one's key", async () => {
+    const { result, rerender } = renderHook(({ operation }) => useIdempotentSend<{ id: string }>("inf", instant, persist("ws-alpha", operation)), {
+      initialProps: { operation: "invoke:desk.qa" },
+    });
+    const { send, keys } = script("network_error");
+    await act(() => result.current.submit(BODY, send));
+    expect(readPending("ws-alpha", "invoke:desk.qa")).toMatchObject({ key: keys[0], outcome: "unresolved" });
+
+    rerender({ operation: "invoke:desk.other" }); // the person picks another lineage
+    await act(() => result.current.submit(BODY, send)); // the same body for the other lineage
+    expect(keys).toHaveLength(2);
+    expect(keys[1]).not.toBe(keys[0]); // its own key: never the first lineage's
+    expect(readPending("ws-alpha", "invoke:desk.qa")).toMatchObject({ key: keys[0], outcome: "unresolved" }); // kept
   });
 
   it("after a reload, different values are never sent silently with a new key: only the deliberate new request", async () => {
@@ -540,20 +596,143 @@ describe("useIdempotentSend fails closed without a durable recovery record", () 
     expect(send).toHaveBeenCalledTimes(1);
   });
 
-  it("a workspace change: the old request is not retried there, and its key is never reused there", async () => {
-    let ws = "ws-alpha";
-    const { result } = mount(persist(async () => ws));
-    const lost = script("network_error");
-    await act(() => result.current.submit(BODY, lost.send));
-    ws = "ws-beta"; // the UI server now holds another workspace's API key
-    await act(() => result.current.retry());
-    expect(lost.keys).toHaveLength(1);
-    expect(result.current.state).toEqual({ phase: "not_sent", reason: "workspace_changed" });
-    const { send, keys } = script();
-    await act(() => result.current.submit(BODY, send)); // a new intent in the new workspace
-    expect(keys).toHaveLength(1);
-    expect(keys[0]).not.toBe(lost.keys[0]);
-    expect(readPending("ws-alpha", OP)).toMatchObject({ key: lost.keys[0], outcome: "unresolved" }); // kept for its own workspace
+  describe("a workspace change (the UI server's key now belongs to workspace B)", () => {
+    /** workspace A has an unresolved request with key kA (the answer was lost) */
+    const unresolvedInA = async () => {
+      let ws = "ws-alpha";
+      const hook = mount(persist(async () => ws));
+      const lost = script("network_error");
+      await act(() => hook.result.current.submit(BODY, lost.send));
+      expect(hook.result.current.state).toMatchObject({ phase: "settled", kind: "unresolved" });
+      return { hook, kA: lost.keys[0], to: (w: string) => void (ws = w) };
+    };
+
+    it("neither ordinary submit nor retry sends in B: workspace_changed, zero requests, A's record kept", async () => {
+      const { hook, kA, to } = await unresolvedInA();
+      to("ws-beta");
+      const { send } = script();
+      await act(async () => {
+        expect(await hook.result.current.submit(BODY, send)).toBeNull(); // the same values
+        expect(await hook.result.current.submit("other values", send)).toBeNull(); // or others
+        expect(await hook.result.current.retry()).toBeNull();
+      });
+      expect(send).not.toHaveBeenCalled();
+      expect(hook.result.current.state).toEqual({ phase: "not_sent", reason: "workspace_changed" });
+      expect(readPending("ws-alpha", OP)).toMatchObject({ key: kA, outcome: "unresolved" });
+      expect(readPending("ws-beta", OP)).toBeNull();
+    });
+
+    it("only the explicit new request runs in B, with B's own key; back in A the original key is recovered", async () => {
+      const { hook, kA, to } = await unresolvedInA();
+      to("ws-beta");
+      const inB = script();
+      let storedInB: unknown = null;
+      const sendB = vi.fn<(key: string) => Promise<Sent<{ id: string }>>>(async (key) => {
+        storedInB = readPending("ws-beta", OP);
+        return inB.send(key);
+      });
+      await act(() => hook.result.current.sendWithNewKey(BODY, sendB));
+      const kB = sendB.mock.calls[0][0];
+      expect(kB).not.toBe(kA);
+      expect(storedInB).toMatchObject({ key: kB, outcome: "sending" }); // B's own record, before it left
+      expect(readPending("ws-beta", OP)).toBeNull(); // confirmed
+      expect(readPending("ws-alpha", OP)).toMatchObject({ key: kA, outcome: "unresolved" }); // untouched
+
+      to("ws-alpha"); // the original key is back
+      const inA = script();
+      await act(() => hook.result.current.submit(BODY, inA.send));
+      expect(inA.keys).toEqual([kA]); // recovered, never a new key
+      expect(hook.result.current.state).toMatchObject({ phase: "settled", kind: "done" });
+      expect(readPending("ws-alpha", OP)).toBeNull();
+    });
+
+    it("a reload in B never sends A's key there, and a reload back in A recovers it", async () => {
+      const { hook, kA } = await unresolvedInA();
+      hook.unmount();
+      const inB = mount(persist(async () => "ws-beta"));
+      await act(async () => {});
+      const { send, keys } = script();
+      await act(() => inB.result.current.submit(BODY, send)); // nothing uncertain is known in B
+      expect(keys).toHaveLength(1);
+      expect(keys[0]).not.toBe(kA);
+      inB.unmount();
+      const inA = mount();
+      await waitFor(() => expect(inA.result.current.state).toMatchObject({ phase: "recovered", key: kA }));
+    });
+
+    it("a workspace that changes while the lookup is in flight is caught by the fresh check: zero requests", async () => {
+      let answer!: (ws: string) => void;
+      let calls = 0;
+      const hook = mount(persist(() => (calls++ < 2 ? Promise.resolve("ws-alpha") : new Promise<string>((r) => (answer = r)))));
+      const lost = script("network_error");
+      await act(() => hook.result.current.submit(BODY, lost.send)); // lookups 1 (mount) and 2: A
+      let retried!: Promise<unknown>;
+      act(() => void (retried = hook.result.current.retry())); // lookup 3 is in flight...
+      answer("ws-beta"); // ...and answers B: the key changed meanwhile
+      await act(async () => {
+        expect(await retried).toBeNull();
+      });
+      expect(lost.keys).toHaveLength(1); // the original request was not redirected to B
+      expect(hook.result.current.state).toEqual({ phase: "not_sent", reason: "workspace_changed" });
+    });
+
+    it("an independent request that was confirmed in A does not hold B back", async () => {
+      let ws = "ws-alpha";
+      const hook = mount(persist(async () => ws));
+      const first = script();
+      await act(() => hook.result.current.submit(BODY, first.send));
+      ws = "ws-beta";
+      const second = script();
+      await act(() => hook.result.current.submit(BODY, second.send));
+      expect(second.keys).toHaveLength(1);
+      expect(second.keys[0]).not.toBe(first.keys[0]);
+    });
+  });
+
+  describe("an answer that does not decode (the server may have committed it)", () => {
+    it("keeps the key and the record: the same values recover it with the same key, also after a reload", async () => {
+      const first = mount();
+      const { send, keys } = script("contract_mismatch");
+      await act(() => first.result.current.submit(BODY, send));
+      expect(first.result.current.state).toMatchObject({ phase: "settled", kind: "unresolved", error: { code: "contract_mismatch" } });
+      expect(keys).toHaveLength(1); // no automatic resend
+      expect(readPending("ws-alpha", OP)).toMatchObject({ key: keys[0], digest: requestDigest(BODY), outcome: "unresolved" });
+      expect(first.result.current.blocks("other values")).toBe("other_pending"); // never a silent new key
+      first.unmount(); // the page reloads
+      const after = mount();
+      await waitFor(() => expect(after.result.current.state).toMatchObject({ phase: "recovered", key: keys[0], outcome: "unresolved" }));
+      await act(() => after.result.current.submit(BODY, send));
+      expect(keys).toEqual([keys[0], keys[0]]);
+      expect(after.result.current.state).toMatchObject({ phase: "settled", kind: "done", replayed: true });
+      expect(readPending("ws-alpha", OP)).toBeNull();
+    });
+
+    it("retry() resends the original request with its key", async () => {
+      const { result } = mount();
+      const { send, keys } = script("contract_mismatch");
+      await act(() => result.current.submit(BODY, send));
+      await act(() => result.current.retry());
+      expect(keys).toEqual([keys[0], keys[0]]);
+      expect(result.current.state).toMatchObject({ phase: "settled", kind: "done", replayed: true });
+    });
+
+    it("a later 401 on the same key does not end it: the record and the key stay", async () => {
+      const { result } = mount();
+      const { send, keys } = script("contract_mismatch", "unauthenticated");
+      await act(() => result.current.submit(BODY, send));
+      await act(() => result.current.retry());
+      expect(result.current.state).toMatchObject({ phase: "settled", kind: "unresolved", error: { code: "unauthenticated" } });
+      expect(readPending("ws-alpha", OP)).toMatchObject({ key: keys[0], outcome: "unresolved" });
+      await act(() => result.current.submit(BODY, send)); // the key is valid again
+      expect(new Set(keys)).toEqual(new Set([keys[0]]));
+    });
+
+    it("a first-attempt 401 (it never ran) is still a refusal and clears the record", async () => {
+      const { result } = mount();
+      await act(() => result.current.submit(BODY, script("unauthenticated").send));
+      expect(result.current.state).toMatchObject({ phase: "settled", kind: "refused" });
+      expect(readPending("ws-alpha", OP)).toBeNull();
+    });
   });
 
   it("an ambiguous request, then the explicit new request: a new key, stored and verified before it leaves", async () => {

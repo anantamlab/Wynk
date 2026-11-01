@@ -24,6 +24,15 @@ import {
       inference_deployment_changed                    the bound version no longer serves
       idempotency_conflict                            the key belongs to a different request
     The person decides; sending again always takes a NEW key and a deliberate action.
+  - Every failure falls in one of three classes (`sendIdempotent`):
+      proven not sent       the request never left the browser (`request_not_sent`)
+      authoritative answer  the Wynk API answered with its error envelope (`fromServer`), except
+                            `internal_error`
+      uncertain             it may have reached the server: a 2xx answer that does not decode
+                            (`contract_mismatch`), a client error after dispatch, `internal_error`,
+                            anything unknown. It stays "unresolved" and keeps its key and record.
+    After an attempt with this key that may have run, a refusal the server gives before it reads
+    the key (401, 403, 404, 429, 503) does not end the request either: it stays "unresolved".
 */
 
 /** api/product.py IDEMPOTENCY_KEY */
@@ -38,9 +47,23 @@ export function newIdempotencyKey(prefix: string): string {
   return key;
 }
 
-/** Failures after which the same request may be sent again with the same key. */
+/** Failures after which the same request may be sent again with the same key, automatically. */
 export const RETRYABLE = new Set(["network_error", "bad_response", "storage_error", "inference_in_progress"]);
 const AMBIGUOUS = new Set(["inference_ambiguous_attempt", "ambiguous_attempt"]);
+/** proven before dispatch: the request did not leave the browser */
+const NOT_SENT = new Set(["request_not_sent", "simulated_only"]);
+/**
+ * The Wynk API itself answered with its error envelope: an answer about this request (a 422
+ * validation, a FAILED run's 502 replayed under the key, …). Not `internal_error`: the server's
+ * catch-all for a fault it did not expect, which may come after the request committed.
+ */
+const authoritative = (e: ApiError) => e.fromServer && e.code !== "internal_error";
+/**
+ * Refusals the server gives BEFORE it reads the key (docs/champion_inference.md "Scope"):
+ * authentication, scope, a missing target, quota, an unavailable backend. They say nothing about
+ * an earlier attempt with the same key.
+ */
+const beforeKey = (e: ApiError) => e.status === 401 || e.status === 403 || e.status === 404 || e.status === 429 || e.status === 503;
 
 export type Outcome<T> =
   | { kind: "done"; key: string; value: T; replayed: boolean }
@@ -50,9 +73,12 @@ export type Outcome<T> =
   | { kind: "deployment_changed"; key: string; error: ApiError }
   /** this key was already used for a different request */
   | { kind: "conflict"; key: string; error: ApiError }
-  /** still unknown after every retry (offline, still running): retry with the same key */
+  /**
+   * may have run, and nobody knows its answer: offline or still running after every retry, an
+   * answer that does not decode, a client error after dispatch, a server fault. Keeps its key.
+   */
   | { kind: "unresolved"; key: string; error: ApiError }
-  /** a conclusive refusal or failure (validation, authorization, a failed run) */
+  /** a conclusive refusal (validation, authorization) of a request that never ran */
   | { kind: "refused"; key: string; error: ApiError };
 
 export interface RetryPolicy {
@@ -69,14 +95,20 @@ const realSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 const asApiError = (err: unknown) => (err instanceof ApiError ? err : new ApiError("internal_client_error", err instanceof Error ? err.message : String(err)));
 
-/** Sends one request under `key`, retrying it with the SAME key while that is safe. */
+/**
+ * Sends one request under `key`, retrying it with the SAME key while that is safe.
+ * `mayHaveRun`: an earlier attempt with this key may already have reached the server (a resend
+ * of an unresolved or recovered request), so no refusal can end it.
+ */
 export async function sendIdempotent<T>(
   key: string,
   send: (key: string) => Promise<Sent<T>>,
   policy: RetryPolicy = DEFAULT_POLICY,
   onWait?: (error: ApiError, attempt: number, ms: number) => void,
+  mayHaveRun = false,
 ): Promise<Outcome<T>> {
   const sleep = policy.sleep ?? realSleep;
+  let uncertain = mayHaveRun;
   for (let attempt = 0; ; attempt++) {
     try {
       const { value, replayed } = await send(key);
@@ -86,11 +118,18 @@ export async function sendIdempotent<T>(
       if (AMBIGUOUS.has(error.code)) return { kind: "ambiguous", key, error };
       if (error.code === "inference_deployment_changed") return { kind: "deployment_changed", key, error };
       if (error.code === "idempotency_conflict") return { kind: "conflict", key, error };
-      if (!RETRYABLE.has(error.code)) return { kind: "refused", key, error };
-      if (attempt >= policy.retries) return { kind: "unresolved", key, error };
-      const ms = backoffMs(attempt, policy);
-      onWait?.(error, attempt + 1, ms);
-      await sleep(ms);
+      if (RETRYABLE.has(error.code)) {
+        uncertain = true; // this attempt may have reached the server
+        if (attempt >= policy.retries) return { kind: "unresolved", key, error };
+        const ms = backoffMs(attempt, policy);
+        onWait?.(error, attempt + 1, ms);
+        await sleep(ms);
+        continue;
+      }
+      const settled = uncertain ? authoritative(error) && !beforeKey(error) : NOT_SENT.has(error.code) || authoritative(error);
+      if (settled) return { kind: "refused", key, error };
+      // it may have run: no automatic resend (it would fail the same way), the key is kept
+      return { kind: "unresolved", key, error };
     }
   }
 }
@@ -176,7 +215,7 @@ async function exclusive<R>(busy: { current: boolean }, action: () => Promise<R 
  */
 export function useIdempotentSend<T>(prefix: string, policy: RetryPolicy, persist: Persist) {
   type Send = (key: string) => Promise<Sent<T>>;
-  type Pending = { workspace: string; key: string; digest: string; outcome: Stage; send: Send | null };
+  type Pending = { workspace: string; operation: string; key: string; digest: string; outcome: Stage; send: Send | null };
   const [state, setState] = useState<SendState<T>>({ phase: "idle" });
   const [pending, setPendingView] = useState<Pending | null>(null);
   const pendingRef = useRef<Pending | null>(null);
@@ -192,10 +231,11 @@ export function useIdempotentSend<T>(prefix: string, policy: RetryPolicy, persis
   /** the uncertain request in memory belongs to this workspace (from its stored record, if any) */
   const adopt = useCallback(
     (workspace: string): StoreResult<null> => {
-      if (pendingRef.current?.workspace === workspace) return { ok: true, value: null };
+      const p = pendingRef.current;
+      if (p?.workspace === workspace && p.operation === operation) return { ok: true, value: null };
       const r = loadPending(workspace, operation);
       if (!r.ok) return r;
-      put(pendingRef, setPendingView, r.value ? { workspace, key: r.value.key, digest: r.value.digest, outcome: r.value.outcome, send: null } : null);
+      put(pendingRef, setPendingView, r.value ? { workspace, operation, key: r.value.key, digest: r.value.digest, outcome: r.value.outcome, send: null } : null);
       if (r.value) setState({ phase: "recovered", key: r.value.key, outcome: r.value.outcome });
       return { ok: true, value: null };
     },
@@ -214,20 +254,27 @@ export function useIdempotentSend<T>(prefix: string, policy: RetryPolicy, persis
     };
   }, [adopt]);
 
-  /** stores and verifies the record, THEN sends. A failure sends nothing. */
+  /**
+   * Stores and verifies the record, THEN sends. A failure sends nothing. `reused`: the key comes
+   * from an earlier, uncertain attempt, so no refusal can end it (`sendIdempotent`).
+   */
   const run = useCallback(
-    async (workspace: string, key: string, digest: string, send: Send) => {
+    async (workspace: string, key: string, digest: string, send: Send, reused: boolean) => {
       const stored = writePending(workspace, operation, { key, digest, outcome: "sending" });
       if (!stored.ok) {
         setState({ phase: "not_sent", reason: stored.reason, detail: stored.detail });
         return null;
       }
-      put(pendingRef, setPendingView, { workspace, key, digest, outcome: "sending", send });
+      put(pendingRef, setPendingView, { workspace, operation, key, digest, outcome: "sending", send });
       setState({ phase: "sending", key, waiting: null });
-      const outcome = await sendIdempotent(key, send, policyRef.current, (error, attempt) =>
-        setState({ phase: "sending", key, waiting: { code: error.code, attempt } }),
+      const outcome = await sendIdempotent(
+        key,
+        send,
+        policyRef.current,
+        (error, attempt) => setState({ phase: "sending", key, waiting: { code: error.code, attempt } }),
+        reused,
       );
-      put(pendingRef, setPendingView, { workspace, key, digest, outcome: outcome.kind, send });
+      put(pendingRef, setPendingView, { workspace, operation, key, digest, outcome: outcome.kind, send });
       // if this update fails, the "sending" record stays: after a reload the same values still reuse the key
       if (outcome.kind === "unresolved" || outcome.kind === "ambiguous") writePending(workspace, operation, { key, digest, outcome: outcome.kind });
       else clearPending(workspace, operation);
@@ -248,9 +295,16 @@ export function useIdempotentSend<T>(prefix: string, policy: RetryPolicy, persis
     (fingerprint: string, send: Send) =>
       exclusive(busy, async () => {
         await recovered.current;
-        const workspace = await target();
+        const workspace = await target(); // a fresh check: the workspace may have changed while it was asked
         if (workspace === null) return null;
-        const own = adopt(workspace); // the workspace may only answer now, or may have changed
+        const mine = pendingRef.current;
+        if (mine && mine.operation === operation && mine.workspace !== workspace && UNCERTAIN.has(mine.outcome)) {
+          // the uncertain request belongs to another workspace: it is neither resent nor replaced
+          // here. Its record stays for that workspace; only the deliberate new request runs here.
+          setState({ phase: "not_sent", reason: "workspace_changed" });
+          return null;
+        }
+        const own = adopt(workspace); // the workspace may only answer now
         if (!own.ok) {
           setState({ phase: "not_sent", reason: own.reason, detail: own.detail });
           return null;
@@ -258,10 +312,10 @@ export function useIdempotentSend<T>(prefix: string, policy: RetryPolicy, persis
         const p = pendingRef.current;
         const digest = requestDigest(fingerprint);
         if (blockOf(p, digest)) return null;
-        const key = p && p.digest === digest && REUSE.has(p.outcome) ? p.key : newIdempotencyKey(prefix);
-        return run(workspace, key, digest, send);
+        const reuse = p !== null && p.digest === digest && REUSE.has(p.outcome);
+        return run(workspace, reuse ? p.key : newIdempotencyKey(prefix), digest, send, reuse);
       }),
-    [adopt, prefix, run, target],
+    [adopt, operation, prefix, run, target],
   );
   const retry = useCallback(
     () =>
@@ -274,7 +328,7 @@ export function useIdempotentSend<T>(prefix: string, policy: RetryPolicy, persis
           setState({ phase: "not_sent", reason: "workspace_changed" }); // its key means nothing to the other workspace
           return null;
         }
-        return run(workspace, p.key, p.digest, p.send);
+        return run(workspace, p.key, p.digest, p.send, true);
       }),
     [run, target],
   );
@@ -285,7 +339,7 @@ export function useIdempotentSend<T>(prefix: string, policy: RetryPolicy, persis
         await recovered.current;
         const workspace = await target();
         if (workspace === null) return null;
-        return run(workspace, newIdempotencyKey(prefix), requestDigest(fingerprint), send);
+        return run(workspace, newIdempotencyKey(prefix), requestDigest(fingerprint), send, false);
       }),
     [prefix, run, target],
   );

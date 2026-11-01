@@ -127,6 +127,42 @@ describe("live experiments", () => {
     expect(posts(s.calls, "/experiments")).toEqual([]);
   });
 
+  it("a created experiment whose 200 answer does not decode keeps its key across a reload; the same values recover it", async () => {
+    const path = `/projects/${PID}/experiments/new?dataset=support-tickets`;
+    const table = (create: Parameters<typeof server>[0][string]) => ({
+      [`GET ${P}/projects/${PID}/datasets`]: v1("list_datasets"),
+      [`GET ${P}/models`]: recorded("list_models"),
+      [`GET ${P}/datasets/support-tickets/versions/1`]: v1("get_version"),
+      [`GET ${P}/datasets/support-tickets/versions/1/splits`]: v1("list_splits"),
+      [`POST ${P}/experiments`]: create,
+      [`GET ${P}/experiments/${JOB}`]: recorded("get_experiment"),
+    });
+    const fillAndSubmit = async () => {
+      const user = userEvent.setup();
+      await user.selectOptions(await screen.findByLabelText("Dataset version", {}, T), "1");
+      await user.type(screen.getByLabelText("Instructions"), "Route the ticket.");
+      const submit = screen.getByRole("button", { name: "Create experiment" });
+      await waitFor(() => expect(submit).toBeEnabled());
+      await user.click(submit);
+    };
+    const before = renderLive(path, table(ok({ job: { job_id: 7 } }))); // committed, answer unreadable
+    await fillAndSubmit();
+    await waitFor(() => expect(screen.getByTestId("send-status")).toHaveAttribute("data-phase", "unresolved"), T);
+    expect(screen.getByTestId("send-status")).toHaveTextContent("contract_mismatch");
+    const [first] = posts(before.calls, "/experiments");
+    const key = first.headers.get("Idempotency-Key")!;
+    expect(posts(before.calls, "/experiments")).toHaveLength(1);
+
+    cleanup(); // the page reloads
+    const after = renderLive(path, table(recorded("create_experiment", { "Idempotent-Replayed": "true" })));
+    await waitFor(() => expect(screen.getByTestId("send-status")).toHaveAttribute("data-phase", "recovered"), T);
+    expect(screen.getByTestId("idempotency-key")).toHaveTextContent(key);
+    await fillAndSubmit();
+    expect(await screen.findByTestId("create-replayed", {}, T)).toHaveTextContent("No second experiment was created");
+    expect(posts(after.calls, "/experiments").map((c) => c.headers.get("Idempotency-Key"))).toEqual([key]);
+    expect(posts(after.calls, "/experiments")[0].body).toEqual(first.body);
+  });
+
   it("an interrupted job shows the server's reason and unproven calls; Resume is a deliberate action", async () => {
     let resumed = false;
     const interrupted = jobWith((j) => {
@@ -274,7 +310,11 @@ describe("live invocation (Phase 1 idempotent contract)", () => {
   const fill = async () => {
     const user = userEvent.setup();
     const panel = await screen.findByTestId("invoke-panel", {}, T);
-    for (const [name, value] of Object.entries(LIFECYCLE.new_order)) await user.type(within(panel).getByRole("textbox", { name: new RegExp(`^${name}`) }), value);
+    // one input event per field (a paste): typing ~200 characters key by key took most of the 5 s test budget
+    for (const [name, value] of Object.entries(LIFECYCLE.new_order)) {
+      await user.click(within(panel).getByRole("textbox", { name: new RegExp(`^${name}`) }));
+      await user.paste(value);
+    }
     return { user, panel };
   };
   const invokes = (calls: Call[]) => posts(calls, `/deployments/${LINEAGE}/invoke`);
@@ -353,6 +393,31 @@ describe("live invocation (Phase 1 idempotent contract)", () => {
     expect(status).toHaveTextContent("nothing was sent");
     expect(invokes(s.calls)).toEqual([]);
     expect(Object.keys(sessionStorage)).toEqual([]);
+  });
+
+  it("a 200 whose body does not decode keeps the key: no automatic resend, and the same-key retry gets the original output", async () => {
+    const route = `POST ${P}/deployments/${LINEAGE}/invoke`;
+    const s = renderLive(`/projects/${PID}/workflows`, {
+      ...deploymentServer("production").table,
+      // the server ran it and answered 200, but the answer does not match the contract
+      [route]: [ok({ inference: { inference_id: 42 } }), recorded("invoke_production", { "Idempotent-Replayed": "true" })],
+    });
+    const { user, panel } = await fill();
+    await user.click(within(panel).getByRole("button", { name: /^Run on production/ }));
+    const status = await within(panel).findByTestId("send-status", {}, T);
+    await waitFor(() => expect(status).toHaveAttribute("data-phase", "unresolved"));
+    expect(status).toHaveTextContent("contract_mismatch");
+    await new Promise((r) => setTimeout(r, 700)); // longer than the first backoff: nothing resends
+    expect(invokes(s.calls)).toHaveLength(1);
+    const key = invokes(s.calls)[0].headers.get("Idempotency-Key")!;
+    const stored = Object.entries(sessionStorage).filter(([k]) => k.startsWith("wynk.pending-request.v1:"));
+    expect(stored.map(([, v]) => JSON.parse(v))).toMatchObject([{ key, outcome: "unresolved" }]);
+
+    await user.click(within(panel).getByRole("button", { name: "Retry with the same key" }));
+    expect(await within(panel).findByTestId("inference-output", {}, T)).toHaveTextContent('"answer": "Lincoln"');
+    expect(within(panel).getByTestId("send-status")).toHaveAttribute("data-phase", "replayed");
+    expect(invokes(s.calls).map((c) => c.headers.get("Idempotency-Key"))).toEqual([key, key]);
+    expect(invokes(s.calls)[1].body).toEqual(invokes(s.calls)[0].body);
   });
 
   it("storage that refuses the recovery record: zero invocations, and the person is told how to fix it", async () => {

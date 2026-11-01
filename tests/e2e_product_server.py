@@ -14,13 +14,19 @@ Two registry entries:
   ``e2e-desk``       answers at once
   ``e2e-desk-slow``  waits ``SLOW_S`` seconds per request, so a browser test can watch a job
                      run and cancel it before it finishes
+
+``WYNK_E2E_PROVIDER_LOG=FILE`` appends every request a fake model server receives to FILE (one
+JSON line each), so a browser test can count provider executions (for example: a same-key
+replay makes none).
 """
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -36,10 +42,19 @@ def main(argv: list[str] | None = None) -> None:
             del os.environ[name]
     os.environ["WYNK_MODEL_API_KEY"] = PROVIDER_KEY  # the fakes' (public, fake) key
 
-    def slow(_: dict[str, Any]) -> None:
+    log = os.environ.get("WYNK_E2E_PROVIDER_LOG")
+    lock = threading.Lock()
+
+    def record(body: dict[str, Any]) -> None:
+        if log:
+            with lock, open(log, "a", encoding="utf-8") as f:
+                f.write(json.dumps(body, sort_keys=True) + "\n")
+
+    def slow(body: dict[str, Any]) -> None:
+        record(body)
         time.sleep(SLOW_S)
 
-    fast = FakeProvider().start()
+    fast = FakeProvider(on_request=record).start()
     slow_provider = FakeProvider(on_request=slow).start()
     registry = Path(tempfile.mkdtemp(prefix="wynk-e2e-registry-")) / "registry.json"
     write_registry(
