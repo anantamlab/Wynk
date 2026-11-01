@@ -14,6 +14,12 @@ Records
                          record, bound to it by ``request_sha256`` / ``output_sha256``. Immutable
                          (trigger); ``UNIQUE(inference_id)``: a second, different feedback for the
                          same inference is a conflict, never an overwrite.
+    feedback_payloads    the inputs, output and expected answer of a feedback, sealed with the
+                         workspace data key (``store.crypto`` envelope, AAD = their canonical
+                         hash, which the feedback record names). Written with its feedback, in
+                         the same transaction; only the envelope is ever replaced (key rotation,
+                         ``rekey_feedback``). A feedback record from before sealing keeps its
+                         payload inline and has no row here.
     trigger_decisions    one immutable decision per deterministic trigger identity
                          (``tr-<hash of the evidence>``): NOT_TRIGGERED / TRIGGERED / SUPPRESSED
                          with machine-readable reasons and evidence. The same evidence can only
@@ -139,6 +145,11 @@ SCHEMA: tuple[str, ...] = (
         received_at          TEXT NOT NULL
     )""",
     "CREATE INDEX IF NOT EXISTS feedback_by_version ON feedback(workflow_version)",
+    """CREATE TABLE IF NOT EXISTS feedback_payloads (
+        feedback_id    TEXT PRIMARY KEY REFERENCES feedback(feedback_id),
+        payload_sha256 TEXT NOT NULL,           -- canonical hash of {inputs, output, expected}
+        envelope       BLOB NOT NULL            -- store.crypto envelope; never plaintext
+    )""",
     """CREATE TABLE IF NOT EXISTS trigger_decisions (
         trigger_id       TEXT PRIMARY KEY,          -- tr-<hash of the evidence identity>
         workflow_version TEXT NOT NULL,
@@ -181,6 +192,18 @@ SCHEMA: tuple[str, ...] = (
     """CREATE TRIGGER IF NOT EXISTS feedback_is_immutable BEFORE UPDATE ON feedback
     BEGIN SELECT RAISE(ABORT, 'feedback is immutable'); END""",
     """CREATE TRIGGER IF NOT EXISTS feedback_is_permanent BEFORE DELETE ON feedback
+    BEGIN SELECT RAISE(ABORT, 'feedback is immutable'); END""",
+    """CREATE TRIGGER IF NOT EXISTS feedback_payloads_are_sealed
+    BEFORE INSERT ON feedback_payloads
+    WHEN substr(NEW.envelope, 1, 8) IS NOT CAST('WYNKBLOB' AS BLOB)
+    BEGIN SELECT RAISE(ABORT, 'a feedback payload is stored sealed'); END""",
+    """CREATE TRIGGER IF NOT EXISTS feedback_payloads_keep_their_identity
+    BEFORE UPDATE ON feedback_payloads
+    WHEN NEW.feedback_id IS NOT OLD.feedback_id OR NEW.payload_sha256 IS NOT OLD.payload_sha256
+      OR substr(NEW.envelope, 1, 8) IS NOT CAST('WYNKBLOB' AS BLOB)
+    BEGIN SELECT RAISE(ABORT, 'only a feedback payload''s envelope is re-keyed'); END""",
+    """CREATE TRIGGER IF NOT EXISTS feedback_payloads_are_permanent
+    BEFORE DELETE ON feedback_payloads
     BEGIN SELECT RAISE(ABORT, 'feedback is immutable'); END""",
     """CREATE TRIGGER IF NOT EXISTS trigger_decisions_are_immutable
     BEFORE UPDATE ON trigger_decisions
@@ -318,8 +341,11 @@ class SQLiteMonitoringStore:
         return [PolicyRow(*r) for r in rows]
 
     # -- feedback ---------------------------------------------------------------------------
-    def put_feedback(self, row: FeedbackRow) -> tuple[FeedbackRow, bool]:
-        """Insert ``row``, or return the identical feedback already stored for its inference
+    def put_feedback(
+        self, row: FeedbackRow, payload: tuple[str, bytes] | None = None
+    ) -> tuple[FeedbackRow, bool]:
+        """Insert ``row`` (and its sealed ``payload``: ``(payload_sha256, envelope)``, in the
+        same transaction), or return the identical feedback already stored for its inference
         (``bool``: inserted). A different feedback for the same inference is refused."""
 
         def put(c: _Conn) -> tuple[FeedbackRow, bool]:
@@ -346,6 +372,12 @@ class SQLiteMonitoringStore:
                     row.received_at,
                 ),
             )
+            if payload is not None:
+                c.execute(
+                    "INSERT INTO feedback_payloads(feedback_id, payload_sha256, envelope) "
+                    "VALUES (?,?,?)",
+                    (row.feedback_id, payload[0], payload[1]),
+                )
             return row, True
 
         return self._tx(put)
@@ -356,6 +388,38 @@ class SQLiteMonitoringStore:
                 f"SELECT {_FEEDBACK_COLS} FROM feedback WHERE feedback_id=?", (feedback_id,)
             ).fetchone()
         return _feedback(row) if row is not None else None
+
+    def feedback_payload(self, feedback_id: str) -> tuple[str, bytes] | None:
+        """``(payload_sha256, envelope)`` of a sealed feedback; ``None``: none stored."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload_sha256, envelope FROM feedback_payloads WHERE feedback_id=?",
+                (feedback_id,),
+            ).fetchone()
+        return (row[0], bytes(row[1])) if row is not None else None
+
+    def rekey_feedback(self, reseal: Callable[[str, bytes], bytes | None]) -> int:
+        """Key rotation: ``reseal(payload_sha256, envelope)`` returns the envelope under the
+        active key (``None``: already under it). Each replacement is a CAS on the old envelope,
+        so a concurrent rotation never loses one. Returns how many were re-keyed."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT feedback_id, payload_sha256, envelope FROM feedback_payloads"
+            )
+            stored = [(r[0], r[1], bytes(r[2])) for r in rows]
+        moved = 0
+        for feedback_id, sha, envelope in stored:
+            fresh = reseal(sha, envelope)
+            if fresh is not None and self._tx(
+                lambda c, f=fresh, i=feedback_id, e=envelope: (
+                    c.execute(
+                        "UPDATE feedback_payloads SET envelope=? WHERE feedback_id=? AND envelope=?",
+                        (f, i, e),
+                    ).rowcount
+                )
+            ):
+                moved += 1
+        return moved
 
     def feedback_for_version(self, workflow_version: str) -> list[FeedbackRow]:
         """Every feedback citing an inference of exactly ``workflow_version``."""

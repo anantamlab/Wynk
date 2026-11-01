@@ -60,10 +60,12 @@ const NOT_SENT = new Set(["request_not_sent", "simulated_only"]);
 const authoritative = (e: ApiError) => e.fromServer && e.code !== "internal_error";
 /**
  * Refusals the server gives BEFORE it reads the key (docs/champion_inference.md "Scope"):
- * authentication, scope, a missing target, quota, an unavailable backend. They say nothing about
- * an earlier attempt with the same key.
+ * authentication, scope, a missing target, quota, an unavailable backend, and the workspace
+ * precondition (412 `workspace_mismatch`, api/tenancy.py). They say nothing about an earlier
+ * attempt with the same key.
  */
-const beforeKey = (e: ApiError) => e.status === 401 || e.status === 403 || e.status === 404 || e.status === 429 || e.status === 503;
+const beforeKey = (e: ApiError) =>
+  e.status === 401 || e.status === 403 || e.status === 404 || e.status === 412 || e.status === 429 || e.status === 503;
 
 export type Outcome<T> =
   | { kind: "done"; key: string; value: T; replayed: boolean }
@@ -138,9 +140,11 @@ export async function sendIdempotent<T>(
  * Why nothing was sent. No durable recovery record means no request: without it a lost answer
  * and a reload would lose the key, and the same values could run (and spend) twice.
  *   RecoveryFailure    the workspace or the tab's storage is not usable (lib/pendingKeys.ts)
- *   workspace_changed  the API key now belongs to another workspace than the original request
+ *   workspace_changed   the API key now belongs to another workspace than the original request
+ *   workspace_mismatch  the key changed between the workspace read and the request: the server
+ *                       refused it before it ran (`Wynk-Expected-Workspace`, 412)
  */
-export type NotSentReason = RecoveryFailure | "workspace_changed";
+export type NotSentReason = RecoveryFailure | "workspace_changed" | "workspace_mismatch";
 
 export type SendState<T> =
   | { phase: "idle" }
@@ -214,7 +218,8 @@ async function exclusive<R>(busy: { current: boolean }, action: () => Promise<R 
  *   no body in memory: the person submits the same values again, and they go out with the stored key.
  */
 export function useIdempotentSend<T>(prefix: string, policy: RetryPolicy, persist: Persist) {
-  type Send = (key: string) => Promise<Sent<T>>;
+  /** `workspace`: the one just read; the request sends it as the server-enforced precondition */
+  type Send = (key: string, workspace: string) => Promise<Sent<T>>;
   type Pending = { workspace: string; operation: string; key: string; digest: string; outcome: Stage; send: Send | null };
   const [state, setState] = useState<SendState<T>>({ phase: "idle" });
   const [pending, setPendingView] = useState<Pending | null>(null);
@@ -269,7 +274,7 @@ export function useIdempotentSend<T>(prefix: string, policy: RetryPolicy, persis
       setState({ phase: "sending", key, waiting: null });
       const outcome = await sendIdempotent(
         key,
-        send,
+        (k) => send(k, workspace),
         policyRef.current,
         (error, attempt) => setState({ phase: "sending", key, waiting: { code: error.code, attempt } }),
         reused,
@@ -278,6 +283,11 @@ export function useIdempotentSend<T>(prefix: string, policy: RetryPolicy, persis
       // if this update fails, the "sending" record stays: after a reload the same values still reuse the key
       if (outcome.kind === "unresolved" || outcome.kind === "ambiguous") writePending(workspace, operation, { key, digest, outcome: outcome.kind });
       else clearPending(workspace, operation);
+      if (outcome.kind === "refused" && outcome.error.code === "workspace_mismatch") {
+        // the server proved it ran nowhere: no workspace received it, nothing was spent
+        setState({ phase: "not_sent", reason: "workspace_mismatch", detail: outcome.error.message });
+        return outcome;
+      }
       setState({ phase: "settled", ...outcome });
       return outcome;
     },

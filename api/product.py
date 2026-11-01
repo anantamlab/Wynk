@@ -276,6 +276,7 @@ ERROR_STATUS: dict[str, int] = {
     # -- #32 authentication / workspaces / tenancy --
     "unauthenticated": 401,
     "insufficient_scope": 403,
+    "workspace_mismatch": 412,
     "workspace_not_found": 404,
     "member_not_found": 404,
     "api_key_not_found": 404,

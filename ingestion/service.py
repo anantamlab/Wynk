@@ -59,7 +59,7 @@ from ingestion.parse import (
     serialize_rows,
     sha256_bytes,
 )
-from ingestion.sensitive import SensitiveDataPolicy, screen
+from ingestion.sensitive import SensitiveDataPolicy, ServerMinted, screen
 from store.blobs import BlobError, BlobNotFound, BlobStore
 from store.datasets import (
     Conflict,
@@ -251,7 +251,13 @@ class DatasetService:
 
     # -- uploads ----------------------------------------------------------------------------
     def upload(
-        self, project_id: str, data: bytes, fmt: str, filename: str | None = None
+        self,
+        project_id: str,
+        data: bytes,
+        fmt: str,
+        filename: str | None = None,
+        *,
+        minted: ServerMinted | None = None,
     ) -> tuple[UploadRecord, bool]:
         """Inspect, screen and store one upload. ``bool``: a new upload (False: an identical one
         existed).
@@ -264,12 +270,15 @@ class DatasetService:
         re-serialization (``serialize_rows``) with the rewritten values. No copy of the
         pre-rewrite upload is kept. ``content_hash`` (and therefore the upload id and every
         dataset identity) is the sha256 of exactly those plaintext bytes; the blob store
-        encrypts them, and no ciphertext is ever hashed."""
+        encrypts them, and no ciphertext is ever hashed.
+
+        ``minted``: ids the server itself put into a dataset it builds (``ServerMinted``); only
+        internal callers pass it, never the API."""
         self.get_project(project_id)
         filename = check_filename(filename, fmt)
         parsed = parse_dataset(data, fmt, self.limits)  # fails before anything is stored
         names = [c.name for c in parsed.columns]
-        screened = screen(names, parsed.rows, self.policy, filename)
+        screened = screen(names, parsed.rows, self.policy, filename, minted=minted)
         if screened.report.blocked:
             first = screened.report.blocked[0]
             where = (
@@ -399,16 +408,17 @@ class DatasetService:
 
     # -- registration -----------------------------------------------------------------------
     def register(
-        self, upload_id: str, request: RegisterDataset
+        self, upload_id: str, request: RegisterDataset, *, minted: ServerMinted | None = None
     ) -> tuple[DatasetVersionRecord, bool]:
-        """Create (or return the identical existing) dataset version. ``bool``: created."""
+        """Create (or return the identical existing) dataset version. ``bool``: created.
+        ``minted``: as for ``upload`` (internal callers only)."""
         upload = self._upload_record(upload_id)
         self._require_live(upload.upload_id)
         parsed = self._reparse(upload)  # reads the blob through BlobStore.get: hash-verified
         self._check_mapping(parsed, request)
         if request.row_ids == "column":
             assert request.id_column is not None
-            self._check_id_values(parsed, request.id_column)
+            self._check_id_values(parsed, request.id_column, minted)
             row_ids = column_row_ids(parsed, request.id_column)
             source, scheme = RowIdSource.COLUMN, None
         else:
@@ -479,12 +489,14 @@ class DatasetService:
                     )
                 seen[name] = role
 
-    def _check_id_values(self, parsed: ParsedDataset, id_column: str) -> None:
+    def _check_id_values(
+        self, parsed: ParsedDataset, id_column: str, minted: ServerMinted | None = None
+    ) -> None:
         """Row ids are stored in plaintext metadata and kept in split / experiment records
         after the source is deleted, so an id column must not hold sensitive values: any rule
         match (whatever the policy's action) or a redaction placeholder refuses it (#33)."""
         values = [{id_column: r[id_column]} for r in parsed.rows]
-        report = screen([id_column], values, self.policy).report
+        report = screen([id_column], values, self.policy, minted=minted).report
         redacted = any(
             isinstance(r[id_column], str) and "[REDACTED:" in r[id_column] for r in parsed.rows
         )

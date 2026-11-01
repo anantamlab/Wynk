@@ -5612,6 +5612,18 @@
    }
   }
  },
+ "error_workspace_mismatch": {
+  "status": 412,
+  "body": {
+   "error": {
+    "code": "workspace_mismatch",
+    "message": "this API key belongs to another workspace than the request expects; nothing was done. Read GET /api/v1/workspace again before you send it.",
+    "details": {
+     "field": "Wynk-Expected-Workspace"
+    }
+   }
+  }
+ },
  "get_quota": {
   "status": 200,
   "body": {

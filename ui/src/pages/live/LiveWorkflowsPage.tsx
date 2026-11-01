@@ -252,7 +252,7 @@ function InvokePanel({ lineage, deployment, versions }: { lineage: string; deplo
     const target = chosen.target;
     return {
       fingerprint: JSON.stringify([target, parsed.inputs]),
-      run: (key: string) => lifecycle().invoke(target, parsed.inputs, key),
+      run: (key: string, workspace: string) => lifecycle().invoke(target, parsed.inputs, key, workspace),
     };
   };
   const submit = () => {

@@ -94,6 +94,9 @@ describe("live experiments", () => {
     const [k1, k2] = sent.map((c) => c.headers.get("Idempotency-Key"));
     expect(k1).toMatch(/^exp/);
     expect(k2).toBe(k1);
+    // each attempt names the workspace GET /workspace answered: the server enforces it
+    const ws = (lc("current_workspace").workspace as { workspace_id: string }).workspace_id;
+    expect(sent.map((c) => c.headers.get("Wynk-Expected-Workspace"))).toEqual([ws, ws]);
     expect(sent[1].body).toEqual(sent[0].body);
     const b = sent[0].body as { dataset_version: number; splits_hash: string; plan: { expected_model_hash: string }; contract: { constraints: object } };
     expect(b.dataset_version).toBe(1);
@@ -417,6 +420,8 @@ describe("live invocation (Phase 1 idempotent contract)", () => {
     expect(await within(panel).findByTestId("inference-output", {}, T)).toHaveTextContent('"answer": "Lincoln"');
     expect(within(panel).getByTestId("send-status")).toHaveAttribute("data-phase", "replayed");
     expect(invokes(s.calls).map((c) => c.headers.get("Idempotency-Key"))).toEqual([key, key]);
+    const ws = (lc("current_workspace").workspace as { workspace_id: string }).workspace_id;
+    expect(invokes(s.calls).map((c) => c.headers.get("Wynk-Expected-Workspace"))).toEqual([ws, ws]);
     expect(invokes(s.calls)[1].body).toEqual(invokes(s.calls)[0].body);
   });
 

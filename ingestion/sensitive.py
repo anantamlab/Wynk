@@ -22,6 +22,13 @@ credential must never be stored or reach a model provider); contact data (email,
 redacted. ``WYNK_SENSITIVE_POLICY="email=allow,phone=block"`` overrides per category; a
 credential category can only block or redact (``allow`` refuses to start).
 
+Server-minted identifiers: a hash-derived id the server made itself (a feedback id
+``fb-<24 hex>``, a trigger id ``tr-<24 hex>``) is not user data, but its hex sometimes holds a
+Luhn-valid digit run. Only an internal caller that put such ids into a dataset it builds (the
+re-optimization challenger) may pass them as ``ServerMinted``: exact values of one column, and
+tokens inside its filename. Nothing else is exempt: every other value, column and span is
+screened as usual, and a value that is not an exact ``fb-``/``tr-`` hash id cannot be exempted.
+
 Logs: ``install_log_redaction`` scrubs every log record of the process with the same rules.
 
 Rules are recall-bounded by construction: they find the listed formats, not "all PII". Names,
@@ -35,7 +42,7 @@ import os
 import re
 import threading
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
@@ -316,6 +323,39 @@ def redact_text(
     return "".join(out)
 
 
+SERVER_MINTED_ID = re.compile(r"(?:fb|tr)-[0-9a-f]{24}")
+
+
+@dataclass(frozen=True)
+class ServerMinted:
+    """Identifiers the server minted itself and put into a dataset it builds (module docstring).
+
+    ``cells``: column -> the exact cell values that are minted ids. ``filename_tokens``: minted
+    ids inside the filename; only a match that lies wholly inside one of them is exempt. Never
+    built from a request: an API caller cannot reach it."""
+
+    cells: Mapping[str, frozenset[str]] = field(default_factory=dict)
+    filename_tokens: frozenset[str] = frozenset()
+
+    def __post_init__(self) -> None:
+        for value in (*(v for vs in self.cells.values() for v in vs), *self.filename_tokens):
+            if not isinstance(value, str) or SERVER_MINTED_ID.fullmatch(value) is None:
+                raise ValueError("only a server-minted fb-/tr- hash id can be exempt")
+
+    def cell(self, column: str, value: Any) -> bool:
+        return isinstance(value, str) and value in self.cells.get(column, ())
+
+    def outside_tokens(
+        self, text: str, spans: list[tuple[int, int, Category]]
+    ) -> list[tuple[int, int, Category]]:
+        inside = [
+            (m.start(), m.end())
+            for token in self.filename_tokens
+            for m in re.finditer(re.escape(token), text)
+        ]
+        return [sp for sp in spans if not any(s <= sp[0] and sp[1] <= e for s, e in inside)]
+
+
 @dataclass
 class _Tally:
     values: int = 0
@@ -334,9 +374,12 @@ def screen(
     rows: Iterable[Mapping[str, Any]],
     policy: SensitiveDataPolicy,
     filename: str | None = None,
+    *,
+    minted: ServerMinted | None = None,
 ) -> Screened:
     """Apply ``policy`` to every value. Pure and deterministic: the same rows and policy always
-    give the same report and the same redacted rows."""
+    give the same report and the same redacted rows. ``minted``: server-minted ids to skip
+    (``ServerMinted``; internal callers only)."""
     tallies: dict[tuple[Category, str | None], _Tally] = {}
     redacted = 0
     formula_like = 0
@@ -380,7 +423,9 @@ def screen(
     for i, row in enumerate(rows, start=1):
         new_row: dict[str, Any] = {}
         for name in names:
-            new_row[name] = walk(row.get(name), name, i)
+            cell = row.get(name)
+            minted_cell = minted is not None and minted.cell(name, cell)
+            new_row[name] = cell if minted_cell else walk(cell, name, i)
             value = new_row[name]  # counted as stored: after any redaction
             if isinstance(value, str) and is_formula_like(value):
                 formula_like += 1
@@ -389,6 +434,8 @@ def screen(
     new_filename = filename
     if filename is not None:
         spans = find(filename)
+        if minted is not None:
+            spans = minted.outside_tokens(filename, spans)
         for cat in {c for _, _, c in spans}:
             note(cat, None, 0)
         new_filename = redact_text(filename, spans, policy) if spans else filename

@@ -147,6 +147,12 @@ model hash.
    optimizer), conflicting labels for the same inputs, duplicates. Uploaded and registered
    through `DatasetService` as version n+1 of the same dataset; identical bytes register as the
    identical version. Column types must not change (`dataset_schema_changed`).
+   The upload screen (`ingestion/sensitive.py`) exempts exactly the values the server minted
+   (`ServerMinted`): the frozen feedback ids in the id column and the trigger id in the file
+   name. These are `fb-`/`tr-` + 24 hex of a hash, so about 1 in 10,500 contains a Luhn-valid
+   digit run that the payment-card rule would otherwise block. Every other cell, every other
+   column and every user upload is screened as before; the exemption accepts no value outside
+   the minted grammar. Tests: `tests/test_server_minted_ids.py`.
 3. **Splits.** Every parent row keeps its parent role (`EXPLICIT` splits); only the new rows are
    assigned, by the `seeded_hash/1` ordering and fractions of the parent's plan (or
    `new_row_splits`). Stored with the new version; the parent's splits are untouched.
@@ -213,8 +219,11 @@ the same evidence twice; a non-deterministic challenger job id.
 
 ## Limitations
 
-* No authentication (#32) and no privacy controls (#33): feedback stores the inputs it is
-  bound to; actor/source are untrusted.
+* Feedback stores the inputs, output and expected answer it is bound to, sealed with the
+  workspace data key (`feedback_payloads`; the record keeps their hash). A feedback stored
+  before sealing keeps them inline. Feedback is immutable and permanent: there is no erasure
+  path for one feedback yet. Feedback values are not screened for secrets or PII (only uploads
+  are). Actor/source are untrusted.
 * Input distribution drift sees inputs that arrive with feedback (labelled or not); token
   drift sees all traffic; schema drift sees every rejected request but only its value-free
   violations. Inference records keep only request hashes, by #30's design.

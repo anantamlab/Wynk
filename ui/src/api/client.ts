@@ -108,8 +108,11 @@ export interface LifecycleApi {
   datasetSpec(datasetId: ID, version: number): Promise<DatasetSpecWire>;
   listJobs(): Promise<JobSummaryWire[]>;
   getJob(jobId: ID): Promise<JobWire>;
-  /** POST /experiments with `Idempotency-Key` */
-  createJob(body: CreateExperimentWire, idempotencyKey: string): Promise<Sent<JobWire>>;
+  /**
+   * POST /experiments with `Idempotency-Key`. `expectedWorkspace`: the workspace the caller just
+   * read; the server refuses the request (`workspace_mismatch`, 412) when the key belongs to another.
+   */
+  createJob(body: CreateExperimentWire, idempotencyKey: string, expectedWorkspace?: string): Promise<Sent<JobWire>>;
   cancelJob(jobId: ID): Promise<JobWire>;
   resumeJob(jobId: ID): Promise<JobWire>;
   getArtifact(jobId: ID): Promise<ArtifactWire>;
@@ -127,8 +130,8 @@ export interface LifecycleApi {
   stage(versionId: string, expectedRevision: number): Promise<DeploymentWire>;
   promoteVersion(versionId: string, expectedRevision: number): Promise<DeploymentWire>;
   rollback(lineage: string, expectedRevision: number): Promise<DeploymentWire>;
-  /** POST .../invoke with `Idempotency-Key` (Phase 1 contract, docs/champion_inference.md) */
-  invoke(target: InvokeTarget, inputs: Record<string, unknown>, idempotencyKey: string): Promise<Sent<InferenceWire>>;
+  /** POST .../invoke with `Idempotency-Key` (Phase 1 contract, docs/champion_inference.md); `expectedWorkspace` as for `createJob` */
+  invoke(target: InvokeTarget, inputs: Record<string, unknown>, idempotencyKey: string, expectedWorkspace?: string): Promise<Sent<InferenceWire>>;
 }
 
 /** What kind of failure an error is, for screens that react to it (retry, fix the file, ...). */
@@ -237,6 +240,7 @@ export const ERROR_COPY: Record<string, { kind: ApiErrorKind; title: string }> =
   // #32 authentication / workspaces / tenancy
   unauthenticated: { kind: "auth", title: "A valid API key is required" },
   insufficient_scope: { kind: "auth", title: "This API key is not allowed to do that" },
+  workspace_mismatch: { kind: "conflict", title: "The API key now belongs to another workspace" },
   workspace_not_found: { kind: "not_found", title: "Workspace not found" },
   member_not_found: { kind: "not_found", title: "Member not found" },
   api_key_not_found: { kind: "not_found", title: "API key not found" },

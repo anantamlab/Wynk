@@ -248,6 +248,10 @@ POST /api/v1/deployments/{lineage}/invoke       {"inputs"}               Idempot
 GET  /api/v1/inferences/{inference_id}
 ```
 
+Every route also accepts the `Wynk-Expected-Workspace` precondition header: a value that is not
+the key's workspace is refused with `412 workspace_mismatch` before anything runs
+([tenancy.md](tenancy.md#expected-workspace-wynk-expected-workspace)).
+
 A server without `--model-registry` keeps versions and deployments inspectable, but staging,
 promotion and inference answer `inference_backend_unavailable`.
 

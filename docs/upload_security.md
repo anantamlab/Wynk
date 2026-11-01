@@ -173,13 +173,18 @@ Each rule is one bounded regular expression, some confirmed by a checksum.
   outside the data dir. Only the key id is stored in each envelope.
 * Rotation: prepend a new key (`WYNK_DATA_KEYS="k2:...,k1:..."`), restart, then run
   `python -m api.tenancy secure-data --data-dir ...`. It re-encrypts blobs under the active key,
-  and the sealed outputs of `Idempotency-Key` inference invocations (same envelope, same
-  workspace key; see champion_inference.md).
+  and the sealed outputs of `Idempotency-Key` inference invocations and the sealed payloads of
+  production feedback (same envelope, same workspace key; see champion_inference.md and
+  production_monitoring.md).
   Retire the old key only after that.
 * Upload previews are not persisted (before #33 they were plaintext in `metadata.sqlite3`). They
   are derived from the decrypted blob on read. `secure-data` also encrypts pre-#33 plaintext blobs
   (only if they still hash to their name) and scrubs stored previews. Until then a plaintext blob
   is refused (`BlobNotEncrypted`).
+* Production feedback: the inputs, output and expected answer of a feedback are sealed in
+  `feedback_payloads` (`monitoring.sqlite3`, AAD = their canonical hash); the feedback record
+  keeps only that hash. A feedback stored before sealing keeps its payload inline (feedback is
+  immutable, so it is not rewritten).
 * **Not encrypted:** metadata in SQLite (project names, column names and types, row ids, row
   counts, hashes, split assignments), the identity store and the audit trail. Disk or filesystem
   encryption covers those.

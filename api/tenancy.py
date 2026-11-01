@@ -18,6 +18,14 @@
   resolves ``principal + workspace + scopes`` from the key alone (never from a caller-supplied
   workspace or project id), checks the route's scope, checks quotas for creating routes, then
   hands the request to that workspace's ``ProductAPI``. Only ``GET /api/v1/health`` is public.
+* **Expected workspace** (optional ``Wynk-Expected-Workspace: ws-...`` header, any route). A
+  precondition, never authorization: the key's workspace stays the only authority. Right after
+  authentication - before the scope check, the body, any idempotency claim, any write or provider
+  request - a request whose header names another workspace is refused with
+  ``workspace_mismatch`` (412) and recorded in the key's workspace trail
+  (``security.workspace_mismatch``). Without the header nothing changes. A client that looked up
+  ``GET /workspace`` sends it, so a credential that changed in between can never move the request
+  into another workspace.
 
 API keys: ``wynk_sk_<key_id:16 hex>_<secret:43 url-safe base64 chars>`` (256-bit secret). The
 plaintext is returned once, at creation; the store keeps ``key_id`` (lookup), the scopes, and
@@ -87,6 +95,7 @@ from store.jobs import TERMINAL, SQLiteJobStore
 from store.monitoring import SQLiteMonitoringStore
 from store.priors import SQLitePriorStore
 from store.tenancy import (
+    WORKSPACE_ID,
     StoreQuota,
     TenantBindingError,
     bind_directory,
@@ -98,6 +107,7 @@ log = logging.getLogger("wynk.api.tenancy")
 
 SCOPES = ("read", "write", "invoke", "admin")
 KEY_PREFIX = "wynk_sk_"
+EXPECTED_WORKSPACE = "wynk-expected-workspace"  # the precondition header, lower case
 KEY_RE = re.compile(r"^wynk_sk_([0-9a-f]{16})_([A-Za-z0-9_-]{43})$")
 _KEY_HASH_DOMAIN = b"wynk-api-key/1"
 
@@ -522,6 +532,7 @@ class TenantRouter:
             SQLiteMonitoringStore(root / "monitoring.sqlite3", workspace_id=ws),
             jobs,
             service,
+            payloads=self.keyring.cipher(ws),  # a feedback's row data, sealed at rest
         )
         # every store of the partition must name the same workspace: cross-check the handles
         stores = (
@@ -814,6 +825,7 @@ class TenantRouter:
         except ApiFailure:
             self._audit_authentication_failure(method, path, headers)
             raise
+        self._check_expected_workspace(principal, method, path, headers)
         request = _Request(method, [], {k.lower(): v for k, v in headers.items()}, rfile)
         admin_methods = []
         for route_method, pattern, name in _ADMIN_ROUTES:
@@ -840,6 +852,41 @@ class TenantRouter:
             raise ApiFailure(
                 "insufficient_scope", f"this API key lacks the {scope!r} scope", scope=scope
             )
+
+    def _check_expected_workspace(
+        self, principal: Principal, method: str, path: str, headers: Mapping[str, str]
+    ) -> None:
+        """The ``Wynk-Expected-Workspace`` precondition (module docstring). The header only
+        ever refuses a request; it never selects, widens or grants anything."""
+        values = [v for k, v in headers.items() if k.lower() == EXPECTED_WORKSPACE]
+        if not values:
+            return
+        expected = values[0].strip()
+        if len(values) != 1 or WORKSPACE_ID.fullmatch(expected) is None:
+            raise ApiFailure(
+                "invalid_request",
+                "Wynk-Expected-Workspace must be one workspace id (ws-...)",
+                field="Wynk-Expected-Workspace",
+            )
+        if expected == principal.workspace_id:
+            return
+        route = _product_route(method, path) or next(
+            (n for m, pat, n in _ADMIN_ROUTES if m == method and pat.match(path)), None
+        )
+        self.tenant(principal.workspace_id).api.record(  # best effort: refused either way
+            principal.record(),
+            "security.workspace_mismatch",
+            "route",
+            route,
+            "refused",
+            "workspace_mismatch",
+        )
+        raise ApiFailure(
+            "workspace_mismatch",
+            "this API key belongs to another workspace than the request expects; nothing was "
+            "done. Read GET /api/v1/workspace again before you send it.",
+            field="Wynk-Expected-Workspace",
+        )
 
     # -- security audit (#33) ---------------------------------------------------------------
     def _require_audited(self, principal: Principal, scope: str, route: str) -> None:
@@ -1167,7 +1214,7 @@ def utc() -> str:
 def secure_data(router: TenantRouter) -> dict[str, Any]:
     """Bring every workspace up to #33: encrypt pre-#33 plaintext blobs (and re-encrypt blobs
     under a rotated-out key with the active one, and the sealed outputs of keyed invocations
-    too), and scrub the plaintext row previews pre-#33 upload records kept. Idempotent."""
+    and the sealed feedback payloads too), and scrub the plaintext row previews pre-#33 upload records kept. Idempotent."""
     out: dict[str, Any] = {}
     for ws in router.identity.workspaces():
         api = router.tenant(ws.workspace_id).api
@@ -1180,6 +1227,7 @@ def secure_data(router: TenantRouter) -> dict[str, Any]:
             "refused": report.refused,
             "previews_scrubbed": service.repo.scrub_previews(),  # type: ignore[attr-defined]
             "inference_outputs_rekeyed": api.deployments.rekey_outputs(),
+            "feedback_payloads_rekeyed": api.monitor.rekey_feedback() if api.monitor else 0,
         }
     return out
 

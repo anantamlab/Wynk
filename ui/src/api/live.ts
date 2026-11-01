@@ -54,6 +54,8 @@ export interface LiveOptions {
 
 type Body = { json: unknown } | { bytes: Blob } | undefined;
 const REPLAYED = "Idempotent-Replayed";
+/** api/tenancy.py: the workspace precondition (never authorization: the key decides) */
+export const EXPECTED_WORKSPACE = "Wynk-Expected-Workspace";
 
 export function createLiveApi(options: LiveOptions = {}): WynkApi {
   const base = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
@@ -125,8 +127,10 @@ export function createLiveApi(options: LiveOptions = {}): WynkApi {
   const simulatedOnly = (): Promise<never> => Promise.reject(new ApiError("simulated_only", SIMULATED_ONLY));
   const post = async <T>(path: string, json: unknown, read: (raw: unknown) => T) =>
     (await call("POST", path, json === undefined ? undefined : { json }, read)).value;
-  const sent = async <T>(path: string, json: unknown, read: (raw: unknown) => T, key: string) => {
-    const { value, replayed } = await call("POST", path, { json }, read, { "Idempotency-Key": key });
+  const sent = async <T>(path: string, json: unknown, read: (raw: unknown) => T, key: string, workspace?: string) => {
+    // the workspace the caller just read is a precondition the server enforces (api/tenancy.py)
+    const headers: Record<string, string> = { "Idempotency-Key": key, ...(workspace ? { [EXPECTED_WORKSPACE]: workspace } : {}) };
+    const { value, replayed } = await call("POST", path, { json }, read, headers);
     return { value, replayed };
   };
 
@@ -136,7 +140,7 @@ export function createLiveApi(options: LiveOptions = {}): WynkApi {
     datasetSpec: (datasetId, version) => get(versionPath(datasetId, version), (r) => decode.datasetVersion(r).spec),
     listJobs: () => get("/experiments", lc.jobList),
     getJob: (id) => get(`/experiments/${seg(id)}`, (r) => lc.job(r)),
-    createJob: (body, key) => sent("/experiments", body, (r) => lc.job(r), key),
+    createJob: (body, key, workspace) => sent("/experiments", body, (r) => lc.job(r), key, workspace),
     cancelJob: (id) => post(`/experiments/${seg(id)}/cancel`, undefined, (r) => lc.job(r)),
     resumeJob: (id) => post(`/experiments/${seg(id)}/resume`, undefined, (r) => lc.job(r)),
     getArtifact: (id) => get(`/experiments/${seg(id)}/artifact`, lc.artifact),
@@ -152,8 +156,14 @@ export function createLiveApi(options: LiveOptions = {}): WynkApi {
     stage: (versionId, rev) => post(`/workflows/${seg(versionId)}/stage`, { expected_revision: rev }, lc.deployment),
     promoteVersion: (versionId, rev) => post(`/workflows/${seg(versionId)}/promote`, { expected_revision: rev }, lc.deployment),
     rollback: (l, rev) => post(`/deployments/${seg(l)}/rollback`, { expected_revision: rev }, lc.deployment),
-    invoke: (target, inputs, key) =>
-      sent("lineage" in target ? `/deployments/${seg(target.lineage)}/invoke` : `/workflows/${seg(target.versionId)}/invoke`, { inputs }, lc.inference, key),
+    invoke: (target, inputs, key, workspace) =>
+      sent(
+        "lineage" in target ? `/deployments/${seg(target.lineage)}/invoke` : `/workflows/${seg(target.versionId)}/invoke`,
+        { inputs },
+        lc.inference,
+        key,
+        workspace,
+      ),
   };
 
   return {
