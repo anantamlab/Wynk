@@ -65,13 +65,16 @@ The migration is an explicit, offline, verified rebuild:
 
 **Recovery.** A journal (`<db>.feedback-migration.json`) records the step. Run the same command
 again after a crash. Before the swap, the old store is untouched and the new file is rebuilt.
-After the swap, the swapped store is verified against the backup. Tests crash after every step.
+After the swap, the swapped store is verified against the backup. A resumed run reuses the
+backup name that the journal recorded, so one migration leaves at most one backup. Tests crash
+after every step, and also between the "swapped" journal write and `os.replace`.
 
 **Idempotence.** A store with no legacy record is not changed (`nothing_to_migrate`).
 
 **The backup is kept.** It holds the OLD PLAINTEXT, so protect it like the data. It is deleted
 only with `--remove-backup`, and only after the swapped store verified. The run is audited
-(`feedback.migrate`: `requested`, then `ok` with counts).
+(`feedback.migrate`: `requested`, then `ok` with counts, or `error` with the code
+`migration_failed` and no message).
 
 **Boundary.** The rebuild removes plaintext from the live store file. It is not physical
 erasure. Old WAL frames that were already copied elsewhere, filesystem snapshots, other backups
@@ -94,7 +97,9 @@ python -m api.tenancy erase-feedback --data-dir DIR --workspace-id ws-... --feed
 
 **Destroyed:** the sealed payload (`inputs`, `output`, `expected`, `untrusted_metadata`). The
 envelope is replaced by the `ERASED` tombstone in one `BEGIN IMMEDIATE` transaction with the
-erasure record. The connection runs with `secure_delete=ON`, and the WAL is checkpointed after.
+erasure record. The connection runs with `secure_delete=ON`. After the commit a
+`wal_checkpoint(TRUNCATE)` is attempted. It is best effort: when another connection reads the
+WAL, the checkpoint does not finish, and the old page stays in `-wal` until a later checkpoint.
 
 **Kept** (the minimal evidence, `ERASURE_KEPT`):
 
@@ -124,6 +129,9 @@ anonymous.
     inspect.
   * `409 feedback_in_use`, reason `residual_copies`: copies that erasure cannot reach. The
     response lists their kinds.
+  * `409 feedback_in_use`, reason `concurrent_change`: the feedback was frozen into a
+    re-optimization after its dependents were checked. The erasing transaction re-checks the
+    freeze. Retry to judge the new dependents.
 * **Residual copies.** These are listed by id only:
   * `dataset_version`: the challenger dataset version, while a live upload holds its content
   * `challenger_job`: the challenger job; its attempts hold model answers
@@ -147,7 +155,7 @@ anonymous.
 **Boundary.** Erasure removes the payload from the live store. It does not remove:
 
 * copies in backups or filesystem snapshots
-* WAL frames copied before the checkpoint
+* WAL frames that a busy (unfinished) checkpoint left in `-wal`
 * the residual copies above, when they were accepted
 * data the caller sent elsewhere
 

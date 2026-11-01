@@ -1364,10 +1364,17 @@ def migrate_feedback(
             actor, "feedback.migrate", "workspace", ws, "requested"
         ):
             raise RuntimeError("the audit trail is unavailable; migration stopped")
-        report = migrate(
-            db, router.keyring.cipher(ws), backup_dir=target, dry_run=dry_run,
-            remove_backup=remove_backup,
-        )  # fmt: skip
+        try:
+            report = migrate(
+                db, router.keyring.cipher(ws), backup_dir=target, dry_run=dry_run,
+                remove_backup=remove_backup,
+            )  # fmt: skip
+        except Exception:
+            if audit is not None:  # the class only: a message may name a stored record
+                audit.record(
+                    actor, "feedback.migrate", "workspace", ws, "error", "migration_failed"
+                )
+            raise
         if audit is not None:
             audit.record(
                 actor,

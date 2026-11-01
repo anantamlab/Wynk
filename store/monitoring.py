@@ -481,12 +481,19 @@ class SQLiteMonitoringStore:
 
     # -- erasure (Phase 5) -----------------------------------------------------------------
     def erase_payload(
-        self, feedback_id: str, payload_sha256: str, erasure_json: str
+        self,
+        feedback_id: str,
+        payload_sha256: str,
+        erasure_json: str,
+        *,
+        frozen_trigger: str | None,
     ) -> tuple[ErasureRow, bool]:
         """Record the erasure and replace the sealed envelope with ``ERASED`` - one
         ``BEGIN IMMEDIATE`` transaction, so a crash leaves either both or neither. Idempotent:
         an already erased payload returns its stored record (``bool`` False). The connection
-        runs with ``secure_delete`` so the replaced envelope's bytes are zeroed in the page."""
+        runs with ``secure_delete`` so the replaced envelope's bytes are zeroed in the page.
+        ``frozen_trigger`` is what the caller checked; a freeze since then raises ``Conflict``
+        (the dependents it judged are no longer the dependents)."""
         now = self.clock()
 
         def erase(c: _Conn) -> tuple[ErasureRow, bool]:
@@ -501,6 +508,11 @@ class SQLiteMonitoringStore:
             ).fetchone()
             if stored is None or stored[0] != payload_sha256:
                 raise RepositoryError(f"feedback {feedback_id} has no sealed payload to erase")
+            frozen = c.execute(
+                "SELECT trigger_id FROM frozen_examples WHERE feedback_id=?", (feedback_id,)
+            ).fetchone()
+            if (frozen[0] if frozen is not None else None) != frozen_trigger:
+                raise Conflict(f"feedback {feedback_id} was frozen while it was being erased")
             c.execute(
                 f"INSERT INTO feedback_erasures({_ERASURE_COLS}) VALUES (?,?,?,?)",
                 (feedback_id, payload_sha256, erasure_json, now),
@@ -522,7 +534,8 @@ class SQLiteMonitoringStore:
 
     def checkpoint(self) -> bool:
         """Copy the WAL into the database file and truncate it, so a replaced envelope's old
-        page does not stay in ``-wal``. ``False``: a reader held it (retried on the next one)."""
+        page does not stay in ``-wal``. Best effort: ``False`` when a reader held the WAL; the
+        old page then stays there until a later checkpoint copies over it."""
         with self._connect() as conn:
             busy, _, _ = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
         return busy == 0

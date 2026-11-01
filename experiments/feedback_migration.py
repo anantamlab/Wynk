@@ -355,7 +355,7 @@ def migrate(
         # the old file was replaced: finish by verifying the swapped file against the backup
         backup = Path(state["backup"])
         verify(backup, path, cipher)
-        report["resumed"] = "swapped"
+        report.update(resumed="swapped", rewritten=state.get("rewritten", []))
         return _finish(report, journal, backup, remove_backup, path)
     if new.exists():  # a crash before the swap: the old file is untouched, rebuild
         new.unlink()
@@ -369,7 +369,13 @@ def migrate(
     _checkpoint(path)
     with _read_only(path) as conn:
         before = _fingerprint(conn)
-    backup = Path(backup_dir) / f"{path.name}.pre-feedback-migration.{clock()}"
+    # a resumed run reuses the backup name its journal recorded: one backup per migration, so an
+    # earlier copy of the plaintext is never left behind under another name
+    backup = (
+        Path(state["backup"])
+        if state is not None and state.get("backup")
+        else Path(backup_dir) / f"{path.name}.pre-feedback-migration.{clock()}"
+    )
     journal.write({"step": "build", "backup": str(backup), "schema": MIGRATION_SCHEMA})
     # -- build (the NEW file only) -----------------------------------------------------------
     _backup_to(path, new)
@@ -406,8 +412,16 @@ def migrate(
             side.unlink(missing_ok=True)
         except OSError:
             raise MigrationError("the store is open in another process; stop the server") from None
-    journal.write({"step": "swapped", "backup": str(backup), "schema": MIGRATION_SCHEMA})
+    journal.write(
+        {
+            "step": "swapped",
+            "backup": str(backup),
+            "schema": MIGRATION_SCHEMA,
+            "rewritten": sorted(rewritten),
+        }
+    )
     try:
+        step("pre_swap")  # tests: the journal says swapped, the old file is still in place
         os.replace(new, path)
     except OSError:
         journal.write({"step": "verify", "backup": str(backup), "schema": MIGRATION_SCHEMA})

@@ -19,7 +19,9 @@ Gates that need something this suite must not have report BLOCKED, never PASS:
 test data key and the synthetic secrets the privacy tests use; a hit fails the gate.
 
 Overall: FAIL if any gate failed, else BLOCKED if any gate is blocked, else PASS. A skipped gate
-(``--with-e2e`` not given) is NOT_RUN and makes the overall at best BLOCKED.
+(``--with-e2e`` not given) is NOT_RUN, and a harness run without ``--reference`` is NOT_COMPARED;
+either makes the overall at best BLOCKED. A gate passes only if EVERY part ran a passing test (a
+part whose tests were all skipped or deselected fails the gate).
 """
 
 from __future__ import annotations
@@ -199,9 +201,12 @@ def run_gate(gate: Gate, out: Path, python: str) -> dict[str, Any]:
         c = _counts(xml)
         for k in totals:
             totals[k] += c[k]
-        parts.append({"paths": list(part.paths), "k": part.k, "exit_code": code, **c})
+        ran = c["tests"] - c["failures"] - c["errors"] - c["skipped"]
+        parts.append(
+            {"paths": list(part.paths), "k": part.k, "exit_code": code, "passed": ran, **c}
+        )
     passed = totals["tests"] - totals["failures"] - totals["errors"] - totals["skipped"]
-    ok = all(p["exit_code"] == 0 for p in parts) and passed > 0
+    ok = all(p["exit_code"] == 0 and p["passed"] > 0 for p in parts)
     return {
         "status": "PASS" if ok else "FAIL",
         "covers": gate.covers,
@@ -255,7 +260,9 @@ def run_harness(out: Path, python: str, reference: Path | None) -> dict[str, Any
         result["reference"] = {"compared": len(ref), "different": diff[:20]}
         if diff:
             return result | {"status": "FAIL", "reason": f"{len(diff)} fields differ"}
-    return result | {"status": "PASS"}
+        return result | {"status": "PASS"}
+    # it ran and passed, but nothing shows its results are the accepted ones
+    return result | {"status": "NOT_COMPARED", "reason": "no --reference report was given"}
 
 
 def run_e2e(out: Path, python: str) -> dict[str, Any]:

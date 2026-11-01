@@ -538,6 +538,33 @@ def test_a_crash_before_any_provider_request_is_resumed_exactly_once(desk, monke
     assert desk.counts() == {"inference_records": 1, "inference_invocations": 1}
 
 
+def test_a_resumed_reservation_is_screened_by_the_policy_in_force_now(desk, monkeypatch):
+    """F2: a key bound while the workspace was unscreened is checked again when it is resumed."""
+    from api.tenancy import outbound_policy_command
+
+    carded = {**NEW_ORDER, "question": "Card 4111 1111 1111 1111: where does ORD-1001 go?"}
+    outbound_policy_command(desk.w.r, desk.ws, "off")
+    with monkeypatch.context() as m:
+
+        async def dies(self, genome, task, **kw):  # compiled, about to run: nothing sent
+            raise Crash
+
+        m.setattr("runtime.runner.WorkflowRunner.run", dies)
+        with pytest.raises((Crash, BaseExceptionGroup)):
+            invoke(desk.w.r, desk.key, "carded", inputs=carded)
+    assert desk.sent() == 0 and desk.state() == ["RESERVED"]
+
+    outbound_policy_command(desk.w.r, desk.ws, "screen")
+    desk.w.restart()
+    desk.later()  # the dead owner's lease expired: a resume would send the card now
+    refused = invoke(desk.w.r, desk.key, "carded", inputs=carded)
+    e = err(refused, 422, "outbound_data_blocked")
+    assert "4111" not in json.dumps(refused.body)
+    assert (e["details"]["categories"], e["details"]["fields"]) == ("payment_card", "question")
+    assert desk.sent() == 0 and desk.state() == ["RESERVED"]  # nothing sent, still reserved
+    assert desk.counts() == {"inference_records": 0, "inference_invocations": 1}
+
+
 def test_a_crash_with_a_provider_request_in_flight_is_ambiguous_and_never_resent(desk, monkeypatch):
     from runtime.backends.openai_compatible import OpenAICompatibleClient
 

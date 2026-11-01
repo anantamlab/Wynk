@@ -809,7 +809,8 @@ class ProductionMonitor:
                 "run `python -m api.tenancy migrate-feedback` first",
                 state=state,
             )
-        residual = self._residual_copies(row)
+        trigger_id = self.store.frozen_trigger(feedback_id)
+        residual = self._residual_copies(row, trigger_id)
         if residual and not accept_residual_copies:
             raise FeedbackInUse(
                 f"feedback {feedback_id} was copied where erasure cannot reach "
@@ -832,14 +833,22 @@ class ProductionMonitor:
             "residual_copies_accepted": bool(residual),
             "fully_erased": not residual,
         }
-        stored, created = self.store.erase_payload(feedback_id, sha, canonical_json(record))
+        try:  # the store re-checks the freeze inside the erasing transaction
+            stored, created = self.store.erase_payload(
+                feedback_id, sha, canonical_json(record), frozen_trigger=trigger_id
+            )
+        except Conflict:
+            raise FeedbackInUse(
+                f"feedback {feedback_id} was frozen into a re-optimization while it was being "
+                "erased; nothing was erased, retry to judge its new dependents",
+                reason="concurrent_change",
+            ) from None
         return _erasure_view(stored, created=created)
 
-    def _residual_copies(self, row: FeedbackRow) -> list[dict[str, Any]]:
+    def _residual_copies(self, row: FeedbackRow, trigger_id: str | None) -> list[dict[str, Any]]:
         """Where this feedback's data was copied, as ids only. Raises ``FeedbackInUse`` when a
         dependent is pending or cannot be checked (fail closed: never guessed)."""
         copies: list[dict[str, Any]] = []
-        trigger_id = self.store.frozen_trigger(row.feedback_id)
         if trigger_id is not None:
             reopt = self.store.reoptimization(trigger_id)
             if reopt is None or reopt.state in (ReoptState.CLAIMED, ReoptState.DATASET_CREATED):
@@ -896,10 +905,11 @@ class ProductionMonitor:
     def expired_feedback(self, days: int, now: datetime | None = None) -> list[str]:
         """Feedback received more than ``days`` ago whose payload is not erased yet."""
         cutoff = (now or self.now()).astimezone(UTC) - timedelta(days=days)
+        erased = {e.feedback_id for e in self.store.erasures()}  # one query, not one per row
         return [
             r.feedback_id
             for r in self.store.all_feedback()
-            if _when(r.received_at) < cutoff and self.store.erasure(r.feedback_id) is None
+            if _when(r.received_at) < cutoff and r.feedback_id not in erased
         ]
 
     def _feedback_in(

@@ -255,7 +255,7 @@ def erased_store(tmp_path):
         fb = FeedbackRow(f"fb-{i:024d}", f"inf-{i:024d}", "wv-1", "l", True, "t", "{}", "t")
         store.put_feedback(fb, (f"{i}" * 64, b"WYNKBLOB-sealed-" + bytes([48 + i])))
         rows_.append(fb)
-    store.erase_payload(rows_[0].feedback_id, "0" * 64, '{"x": 1}')
+    store.erase_payload(rows_[0].feedback_id, "0" * 64, '{"x": 1}', frozen_trigger=None)
     return store, tmp_path / "m.sqlite3", rows_
 
 
@@ -291,7 +291,7 @@ def test_the_database_refuses_an_unrecorded_reversed_or_edited_erasure(erased_st
 def test_an_erasure_record_that_names_another_hash_does_not_erase(erased_store):
     store, db, fbs = erased_store
     with pytest.raises(Exception, match="no sealed payload"):
-        store.erase_payload(fbs[1].feedback_id, "f" * 64, "{}")
+        store.erase_payload(fbs[1].feedback_id, "f" * 64, "{}", frozen_trigger=None)
     assert store.erasure(fbs[1].feedback_id) is None
 
 
@@ -307,7 +307,7 @@ def test_a_crash_inside_the_erasure_leaves_neither_the_record_nor_the_tombstone(
     finally:
         conn.close()
     with pytest.raises(Exception, match="simulated crash"):
-        store.erase_payload(fbs[1].feedback_id, "1" * 64, "{}")
+        store.erase_payload(fbs[1].feedback_id, "1" * 64, "{}", frozen_trigger=None)
     assert store.erasure(fbs[1].feedback_id) is None
     assert store.feedback_payload(fbs[1].feedback_id)[1] != ERASED
     # the first erasure is untouched and a retry after the fault succeeds
@@ -317,7 +317,7 @@ def test_a_crash_inside_the_erasure_leaves_neither_the_record_nor_the_tombstone(
         conn.commit()
     finally:
         conn.close()
-    row, created = store.erase_payload(fbs[1].feedback_id, "1" * 64, "{}")
+    row, created = store.erase_payload(fbs[1].feedback_id, "1" * 64, "{}", frozen_trigger=None)
     assert created and store.feedback_payload(fbs[1].feedback_id)[1] == ERASED
 
 
@@ -372,7 +372,13 @@ def test_a_frozen_example_erased_offline_blocks_its_resumed_reoptimization(tmp_p
     with pytest.raises(FeedbackInUse):  # the API path refuses
         world.monitor.erase_feedback(fid, accept_residual_copies=True)
     sha = json.loads(store.feedback(fid).record_json)["payload_sha256"]
-    store.erase_payload(fid, sha, "{}")  # the offline edit
+    with monkeypatch.context() as m:  # a freeze the erasure did not see: it refuses, unchanged
+        m.setattr(store, "frozen_trigger", lambda feedback_id: None)
+        with pytest.raises(FeedbackInUse) as raced:
+            world.monitor.erase_feedback(fid)
+    assert raced.value.details["reason"] == "concurrent_change"
+    assert store.erasure(fid) is None and store.feedback_payload(fid)[1] != ERASED
+    store.erase_payload(fid, sha, "{}", frozen_trigger=frozen(fid))  # the offline edit
     versions_before = [v.dataset_version for v in world.datasets.get_dataset("capitals")]
     other = sealing("m-other")
     other.clock = lambda: 10**12  # the crashed monitor's lease expired

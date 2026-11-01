@@ -1464,6 +1464,9 @@ class ChampionDeployments:
             return None
         contract = TaskContract.model_validate(document["contract"]["task_contract"])
         values = validate_inputs(contract, inputs)  # the same request was valid when bound
+        # F2: the policy in force NOW (it may have changed since the key was bound); a refusal
+        # leaves the invocation reserved and sends nothing
+        self.check_outbound(values)
         owner = _owner()
         gate = self._gate(current.inference_id, owner)
         bound = bind_version(document, self._runtime(), gate)  # a refusal leaves it reserved

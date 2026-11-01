@@ -198,7 +198,7 @@ def test_the_backup_is_removed_only_with_the_explicit_flag(legacy):
     assert list(legacy.backups.iterdir()) == []
 
 
-@pytest.mark.parametrize("step", ["build", "verify", "backup", "swap"])
+@pytest.mark.parametrize("step", ["build", "verify", "backup", "pre_swap", "swap"])
 def test_a_crash_at_any_step_resumes_to_the_same_verified_result(legacy, step):
     summary, views = legacy.summary(), legacy.views()
     with pytest.raises(MigrationError, match="simulated crash"):
@@ -208,11 +208,34 @@ def test_a_crash_at_any_step_resumes_to_the_same_verified_result(legacy, step):
         assert legacy.summary() == summary
     report = legacy.migrate(clock=lambda: "T2")
     assert report["status"] == "migrated" and report["after"] == {"sealed": 6}
-    resumed = {"build": "build", "verify": "verify", "backup": "verify", "swap": "swapped"}
+    resumed = {
+        "build": "build",
+        "verify": "verify",
+        "backup": "verify",
+        "pre_swap": "swapped",  # the journal says swapped, but the old file was still in place
+        "swap": "swapped",
+    }
     assert report["resumed"] == resumed[step]
+    assert report["rewritten"] == sorted(legacy.legacy)  # also after a resume past the swap
+    # the resumed run reuses the journal's backup name: one plaintext copy, never two
+    name = "monitoring.sqlite3.pre-feedback-migration.T1"
+    assert report["backup"]["name"] == name
+    assert [p.name for p in legacy.backups.iterdir()] == [name]
     assert legacy.views() == views and legacy.summary() == summary
     assert leftovers(legacy.db) == []
     assert legacy.migrate()["status"] == "nothing_to_migrate"
+
+
+@pytest.mark.parametrize("step", ["backup", "pre_swap", "swap"])
+def test_a_resumed_run_with_the_flag_leaves_no_backup_at_all(legacy, step):
+    with pytest.raises(MigrationError, match="simulated crash"):
+        legacy.migrate(clock=lambda: "T1", crash_at=step)
+    assert [p.name for p in legacy.backups.iterdir()] == [
+        "monitoring.sqlite3.pre-feedback-migration.T1"
+    ]
+    report = legacy.migrate(clock=lambda: "T2", remove_backup=True)
+    assert report["status"] == "migrated" and report["backup"]["kept"] is False
+    assert list(legacy.backups.iterdir()) == []
 
 
 def test_a_rewrite_that_changes_a_value_fails_verification_and_the_store_is_untouched(
@@ -315,6 +338,21 @@ def test_the_operator_command_refuses_an_unsafe_backup_dir_and_audits_a_run(tmp_
     assert [e["result"] for e in runs] == ["requested", "ok"]  # the dry run is not a write
     assert runs[1]["details"] == {"status": "nothing_to_migrate", "migrated": 0, "legacy": 0}
     assert main(["migrate-feedback", "--data-dir", str(root), "--dry-run"]) == 0
+
+    def fails(*a, **kw):
+        raise MigrationError("feedback fb-secret-id opens to other values")
+
+    with pytest.MonkeyPatch.context() as m:  # a failed run is audited, without its message
+        m.setattr("experiments.feedback_migration.migrate", fails)
+        with pytest.raises(MigrationError):
+            migrate_feedback(r, backup_dir=tmp_path / "backups")
+    s, body = call(r, key, "GET", "audit")
+    runs = [e for e in body["events"] if e["action"] == "feedback.migrate"]
+    assert [(e["result"], e.get("code")) for e in runs[2:]] == [
+        ("requested", None),
+        ("error", "migration_failed"),
+    ]
+    assert "fb-secret-id" not in json.dumps(body)
 
 
 def test_a_resume_after_the_swap_re_verifies_the_swapped_store(legacy):
