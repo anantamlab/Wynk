@@ -60,6 +60,7 @@ describe("live mode is isolated from mock code", () => {
     expect(closure.map((f) => f.slice(SRC.length + 1).replaceAll("\\", "/")).sort()).toEqual([
       "api/client.ts",
       "api/contract/decode.ts",
+      "api/contract/lifecycle.ts",
       "api/contract/mapping.ts",
       "api/contract/rules.ts",
       "api/live.ts",
@@ -82,7 +83,8 @@ describe("live mode is isolated from mock code", () => {
     vi.stubGlobal("fetch", r.fetch);
     window.history.replaceState(null, "", "/projects");
     expect(api().mode).toBe("live");
-    expect(api().experiments).toBe("unavailable");
+    expect(api().experiments).toBe("live");
+    expect(api().lifecycle).not.toBeNull();
     const projects = await api().listProjects();
     expect(projects).toHaveLength(1);
     expect(r.calls.map((c) => c.url)).toEqual(["/api/v1/projects"]);

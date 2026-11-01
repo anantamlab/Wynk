@@ -1,7 +1,7 @@
 import { ChatsCircle, Database, FolderSimple, GithubLogo, Flask, TreeStructure } from "@phosphor-icons/react";
 import { createContext, useContext, useMemo } from "react";
 import { NavLink, Outlet, useMatch } from "react-router";
-import { api } from "@/api";
+import { ApiError, api } from "@/api";
 import { GhostLogo } from "@/components/GhostFigure";
 import { useResource } from "@/lib/useResource";
 import { cn } from "@/lib/utils";
@@ -75,6 +75,7 @@ export function AppShell() {
 
           <div className="space-y-2 border-t border-line p-3">
             <DataSourceBadge />
+            <WorkspaceLine />
             <a href={REPO} className="flex items-center gap-1.5 text-xs text-ink-soft hover:text-ink" target="_blank" rel="noreferrer">
               <GithubLogo size={14} aria-hidden="true" /> Source on GitHub
             </a>
@@ -131,6 +132,27 @@ function SideLink({
       <IconCmp size={small ? 14 : 16} aria-hidden="true" />
       {children}
     </NavLink>
+  );
+}
+
+/** Live mode: the workspace the UI server's API key belongs to (#32), or why it cannot be read. */
+function WorkspaceLine() {
+  const lifecycle = api().lifecycle;
+  const ws = useResource(() => (lifecycle ? lifecycle.workspace() : Promise.resolve(null)), [lifecycle]);
+  if (!lifecycle || ws.state === "loading") return null;
+  if (ws.state === "error") {
+    const code = ws.cause instanceof ApiError ? ws.cause.code : "error";
+    return (
+      <p data-testid="workspace" data-error-code={code} className="text-[11px] text-bad">
+        Workspace unavailable <span className="font-mono">[{code}]</span>
+      </p>
+    );
+  }
+  if (!ws.data) return null;
+  return (
+    <p data-testid="workspace" className="text-[11px] leading-snug text-ink-soft" title={`scopes: ${ws.data.scopes.join(", ")}`}>
+      Workspace <span className="font-semibold text-ink">{ws.data.name}</span> · {ws.data.role.toLowerCase()}
+    </p>
   );
 }
 

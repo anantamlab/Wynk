@@ -114,8 +114,11 @@ describe("screens on the live adapter (real product API responses)", () => {
     expect(within(row).getByTestId("size-optimization")).toHaveTextContent(String(sizes.optimization));
     expect(within(row).getByTestId("size-validation")).toHaveTextContent(String(sizes.validation));
     expect(within(row).getByTestId("size-test")).toHaveTextContent(String(sizes.test));
-    // experiments have no backend: the action says so instead of linking to a fake screen
-    expect(screen.getByRole("button", { name: /Configure experiment · needs experiment backend/ })).toBeDisabled();
+    // experiments run on the product API: the action links to the live configure screen
+    expect(screen.getByRole("link", { name: "Configure experiment" })).toHaveAttribute(
+      "href",
+      `/projects/${PID}/experiments/new?dataset=support-tickets`,
+    );
   });
 
   it("shows the server's inspection of an upload: types, nulls, row count, hash", async () => {
@@ -140,11 +143,12 @@ describe("screens on the live adapter (real product API responses)", () => {
     expect(alert).toHaveTextContent("line 2");
   });
 
-  it("says experiments need a backend that does not exist yet, and sends no experiment request", async () => {
-    const r = renderLive(`/projects/${PID}/experiments`, ["list_projects", "get_project"]);
-    expect(await screen.findByTestId("experiment-backend-required", {}, { timeout: 3000 })).toHaveTextContent(/not built yet/);
-    for (const n of [20, 21, 22, 23]) expect(screen.getByRole("link", { name: `#${n}` })).toHaveAttribute("href", `https://github.com/Aryabhatta-0/Wynk/issues/${n}`);
-    expect(r.calls.every((c) => !/experiment|workflow|model/.test(c))).toBe(true);
+  it("loads experiments from the product API's experiment routes, never from a simulation", async () => {
+    // the experiment backend exists (api/product.py `experiments` routes): the live screen asks it
+    const r = renderLive(`/projects/${PID}/experiments`, ["list_projects", "get_project", "list_datasets"]);
+    expect(await screen.findByText("Could not load experiments", {}, { timeout: 3000 })).toBeInTheDocument(); // not routed in this test
+    expect(r.calls).toContain("GET /api/v1/experiments");
+    expect(screen.queryByTestId("experiment-backend-required")).not.toBeInTheDocument();
     expect(screen.queryByTestId("simulated-notice")).not.toBeInTheDocument();
   });
 });

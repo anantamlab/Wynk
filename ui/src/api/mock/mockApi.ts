@@ -294,6 +294,7 @@ export function createMockApi(options: MockOptions = {}): WynkApi {
   return {
     mode: "mock",
     experiments: "simulated",
+    lifecycle: null,
 
     listProjects: () => respond("listProjects", () => projects.map((p) => project(p.id))),
     getProject: (id) => respond("getProject", () => project(id)),

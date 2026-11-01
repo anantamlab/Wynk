@@ -1,4 +1,21 @@
 import type {
+  ArtifactWire,
+  ChampionWire,
+  CreateExperimentWire,
+  DeploymentEventWire,
+  DeploymentWire,
+  InferenceWire,
+  JobSummaryWire,
+  JobWire,
+  ModelWire,
+  PromotionWire,
+  ProvenanceWire,
+  VerifyWire,
+  WorkflowVersionWire,
+  WorkspaceWire,
+} from "./contract/lifecycle";
+import type { DatasetSpecWire } from "./contract/wire";
+import type {
   Created,
   Dataset,
   DatasetFile,
@@ -26,13 +43,19 @@ import type {
     - mock  (`?api=mock` or VITE_WYNK_API=mock): in-memory fixtures and a simulated search,
             `src/api/mock/`, for tests and demos only
 
-  Projects and datasets mirror the product API one-to-one. Experiments have no backend yet
-  (Issues #20–#23): the mock simulates them, the live adapter refuses them without a request.
+  Projects and datasets mirror the product API one-to-one in both modes. Experiments differ:
+    - live: `lifecycle` is the product API's real experiment → promotion → deployment →
+            inference routes (`LifecycleApi`); the simulated-experiment methods below refuse
+            without a request.
+    - mock: `lifecycle` is null; the simulated-experiment methods invent runs, and every screen
+            that shows them says so.
 */
 export interface WynkApi {
   readonly mode: "mock" | "live";
-  /** "simulated": the mock invents runs. "unavailable": no experiment backend exists yet. */
-  readonly experiments: "simulated" | "unavailable";
+  /** "simulated": the mock invents runs. "live": real jobs through `lifecycle`. */
+  readonly experiments: "simulated" | "live";
+  /** the real experiment lifecycle; null in mock mode, which never fakes it */
+  readonly lifecycle: LifecycleApi | null;
 
   listProjects(): Promise<Project[]>;
   getProject(id: ID): Promise<Project>;
@@ -58,6 +81,54 @@ export interface WynkApi {
   cancelExperiment(id: ID): Promise<Experiment>;
   getResults(experimentId: ID): Promise<ResultsComparison>;
   listWorkflows(projectId: ID): Promise<WorkflowSummary[]>;
+}
+
+/** A response to a request that carried an `Idempotency-Key`. */
+export interface Sent<T> {
+  value: T;
+  /** `Idempotent-Replayed: true`: the server answered an earlier request with this key */
+  replayed: boolean;
+}
+
+/** Where an invocation goes: the lineage's production version, or one exact workflow version. */
+export type InvokeTarget = { lineage: string } | { versionId: string };
+
+/**
+ * The product API's experiment lifecycle (api/product.py), one method per route. Responses are the
+ * server's own JSON, checked by `contract/lifecycle.ts`. Methods that create or change state and
+ * accept an idempotency key take it from the caller: one key per user intent, reused on a retry
+ * (see `lib/idempotency.ts`).
+ */
+export interface LifecycleApi {
+  /** GET /workspace: who the server's API key belongs to (the browser never holds the key) */
+  workspace(): Promise<WorkspaceWire>;
+  /** GET /models: the registry the server binds (no endpoint, no credential) */
+  listModels(): Promise<ModelWire[]>;
+  /** GET /datasets/{id}/versions/{n}: the exact DatasetSpec a contract must pin */
+  datasetSpec(datasetId: ID, version: number): Promise<DatasetSpecWire>;
+  listJobs(): Promise<JobSummaryWire[]>;
+  getJob(jobId: ID): Promise<JobWire>;
+  /** POST /experiments with `Idempotency-Key` */
+  createJob(body: CreateExperimentWire, idempotencyKey: string): Promise<Sent<JobWire>>;
+  cancelJob(jobId: ID): Promise<JobWire>;
+  resumeJob(jobId: ID): Promise<JobWire>;
+  getArtifact(jobId: ID): Promise<ArtifactWire>;
+  getProvenance(jobId: ID): Promise<ProvenanceWire>;
+  verifyArtifact(jobId: ID): Promise<VerifyWire>;
+  /** POST /experiments/{id}/promote: opens the held-out test split once, then decides */
+  promote(jobId: ID): Promise<PromotionWire>;
+  getPromotion(jobId: ID): Promise<PromotionWire>;
+  getChampion(lineage: string): Promise<ChampionWire>;
+  publish(championId: string): Promise<Created<WorkflowVersionWire>>;
+  listWorkflowVersions(lineage: string): Promise<WorkflowVersionWire[]>;
+  getDeployment(lineage: string): Promise<DeploymentWire>;
+  getDeploymentHistory(lineage: string): Promise<DeploymentWire & { events: DeploymentEventWire[] }>;
+  /** stage / promote / rollback are fenced by the revision the caller read (`stale_deployment`) */
+  stage(versionId: string, expectedRevision: number): Promise<DeploymentWire>;
+  promoteVersion(versionId: string, expectedRevision: number): Promise<DeploymentWire>;
+  rollback(lineage: string, expectedRevision: number): Promise<DeploymentWire>;
+  /** POST .../invoke with `Idempotency-Key` (Phase 1 contract, docs/champion_inference.md) */
+  invoke(target: InvokeTarget, inputs: Record<string, unknown>, idempotencyKey: string): Promise<Sent<InferenceWire>>;
 }
 
 /** What kind of failure an error is, for screens that react to it (retry, fix the file, ...). */
@@ -190,7 +261,10 @@ export const ERROR_COPY: Record<string, { kind: ApiErrorKind; title: string }> =
   network_error: { kind: "unavailable", title: "Could not reach the Wynk API" },
   bad_response: { kind: "unavailable", title: "The Wynk API did not answer" },
   contract_mismatch: { kind: "contract", title: "Unexpected response from the Wynk API" },
-  experiment_backend_unavailable: { kind: "not_implemented", title: "Experiments need a backend that does not exist yet" },
+  experiment_backend_unavailable: { kind: "unavailable", title: "This Wynk server runs no experiments (no model registry)" },
+  simulated_only: { kind: "not_implemented", title: "Only the mock demo simulates this view" },
+  internal_client_error: { kind: "server", title: "The Wynk UI failed" },
+  request_not_sent: { kind: "invalid", title: "The request was not sent" },
   mock_failure: { kind: "unavailable", title: "Injected mock failure" },
 };
 
@@ -212,11 +286,21 @@ export class ApiError extends Error {
   /** HTTP status, null when no response arrived */
   readonly status: number | null;
   readonly details: Record<string, string | number | null>;
+  /**
+   * `true` only when the Wynk API itself answered with its error envelope (an authoritative
+   * answer). Client codes (`network_error`, `contract_mismatch`, …) are `false`.
+   */
+  readonly fromServer: boolean;
 
-  constructor(code: string, message: string, init: { status?: number | null; details?: Record<string, string | number | null> } = {}) {
+  constructor(
+    code: string,
+    message: string,
+    init: { status?: number | null; details?: Record<string, string | number | null>; fromServer?: boolean } = {},
+  ) {
     super(message);
     this.name = "ApiError";
     this.code = code;
+    this.fromServer = init.fromServer ?? false;
     this.status = init.status ?? null;
     this.details = init.details ?? {};
     const copy = ERROR_COPY[code];

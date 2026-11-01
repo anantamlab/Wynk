@@ -14,6 +14,11 @@ import { ProjectLayout } from "@/pages/ProjectLayout";
 import { ProjectsPage } from "@/pages/ProjectsPage";
 import { ResultsPage } from "@/pages/ResultsPage";
 import { WorkflowsPage } from "@/pages/WorkflowsPage";
+import { LiveConfigurePage } from "@/pages/live/LiveConfigurePage";
+import { LiveExperimentPage } from "@/pages/live/LiveExperimentPage";
+import { LiveExperimentsPage } from "@/pages/live/LiveExperimentsPage";
+import { LiveResultsPage } from "@/pages/live/LiveResultsPage";
+import { LiveWorkflowsPage } from "@/pages/live/LiveWorkflowsPage";
 
 // the hackathon chat demo, kept whole; loaded only when visited
 const Playground = lazy(() => import("./Playground"));
@@ -32,10 +37,11 @@ const Playground = lazy(() => import("./Playground"));
   /projects/:projectId/workflows           validated workflows and champions
   /playground                              ask-a-question chat demo
 
-  Experiment screens sit behind ExperimentGate: there is no experiment backend yet (#20–#23), so
-  with the live API they say so; with the mock they are labelled as simulated.
+  Experiment screens sit behind ExperimentGate: with the live API (the default) they are the
+  `pages/live/` screens over the product API's real experiment, promotion, deployment and
+  inference routes; with the mock they are the simulated demo, labelled as simulated.
 */
-const gated = (page: React.ReactNode) => <ExperimentGate>{page}</ExperimentGate>;
+const gated = (mock: React.ReactNode, live: React.ReactNode) => <ExperimentGate live={live}>{mock}</ExperimentGate>;
 export const routes: RouteObject[] = [
   {
     path: "/playground",
@@ -59,11 +65,11 @@ export const routes: RouteObject[] = [
           { path: "datasets", element: <DatasetsPage /> },
           { path: "datasets/new", element: <DatasetImportPage /> },
           { path: "datasets/:datasetId", element: <DatasetDetailPage /> },
-          { path: "experiments", element: gated(<ExperimentsPage />) },
-          { path: "experiments/new", element: gated(<ConfigurePage />) },
-          { path: "experiments/:experimentId", element: gated(<ExperimentPage />) },
-          { path: "experiments/:experimentId/results", element: gated(<ResultsPage />) },
-          { path: "workflows", element: gated(<WorkflowsPage />) },
+          { path: "experiments", element: gated(<ExperimentsPage />, <LiveExperimentsPage />) },
+          { path: "experiments/new", element: gated(<ConfigurePage />, <LiveConfigurePage />) },
+          { path: "experiments/:experimentId", element: gated(<ExperimentPage />, <LiveExperimentPage />) },
+          { path: "experiments/:experimentId/results", element: gated(<ResultsPage />, <LiveResultsPage />) },
+          { path: "workflows", element: gated(<WorkflowsPage />, <LiveWorkflowsPage />) },
         ],
       },
       { path: "*", element: <NotFound /> },

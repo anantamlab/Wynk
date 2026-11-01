@@ -14,10 +14,14 @@ const API_URL = `http://127.0.0.1:${API_PORT}/api/v1`;
 
   Uses the installed Chrome by default so no browser download is needed; set PW_CHANNEL=chromium
   to use Playwright's bundled build instead. WYNK_PYTHON picks the interpreter (default: python),
-  which must have the project installed (`pip install -e .`), run from the repository root.
+  which must have the project installed with the workflow runtime (`pip install -e ".[maf]"`), run
+  from the repository root.
 */
 // set once in the runner process; workers inherit it instead of creating their own
 process.env.WYNK_E2E_DATA ??= mkdtempSync(join(tmpdir(), "wynk-e2e-"));
+// every request the fake model servers receive (tests/e2e_product_server.py), so tests can count
+// provider executions
+process.env.WYNK_E2E_PROVIDER_LOG ??= join(process.env.WYNK_E2E_DATA, "provider-requests.jsonl");
 const PYTHON = process.env.WYNK_PYTHON ?? "python";
 // #32: the E2E API bootstraps one dev workspace with this key (only its hash is stored); the
 // dev proxy sends it, so live-mode flows run authenticated without the browser ever holding it
@@ -41,11 +45,19 @@ export default defineConfig({
   projects: [{ name: "chrome", use: { ...devices["Desktop Chrome"], channel: process.env.PW_CHANNEL ?? "chrome" } }],
   webServer: [
     {
-      // 1 MiB upload limit, so the size-limit error is reachable from a browser test
-      command: `"${PYTHON}" -m api.product --data-dir "${process.env.WYNK_E2E_DATA}" --port ${API_PORT} --max-upload-mb 1`,
+      // `python -m api.product` with its model registry pointed at local deterministic fake model
+      // servers (tests/e2e_product_server.py): experiments, promotion, deployment and inference run
+      // for real, and no request can reach a hosted provider. 1 MiB upload limit, so the
+      // size-limit error is reachable from a browser test.
+      command: `"${PYTHON}" -m tests.e2e_product_server --data-dir "${process.env.WYNK_E2E_DATA}" --port ${API_PORT} --max-upload-mb 1`,
       cwd: "..",
       url: `${API_URL}/health`,
-      env: { WYNK_BOOTSTRAP_API_KEY: E2E_KEY, WYNK_BOOTSTRAP_EMAIL: "e2e@localhost", WYNK_DATA_KEYS: E2E_DATA_KEYS },
+      env: {
+        WYNK_BOOTSTRAP_API_KEY: E2E_KEY,
+        WYNK_BOOTSTRAP_EMAIL: "e2e@localhost",
+        WYNK_DATA_KEYS: E2E_DATA_KEYS,
+        WYNK_E2E_PROVIDER_LOG: process.env.WYNK_E2E_PROVIDER_LOG,
+      },
       reuseExistingServer: false,
       timeout: 60_000,
     },

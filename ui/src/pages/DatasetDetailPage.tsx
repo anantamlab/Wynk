@@ -7,7 +7,6 @@ import {
   type DatasetSplitSet,
   type DatasetUpload,
   type DatasetVersion,
-  EXPERIMENT_BACKEND_MISSING,
   api,
   latestVersion,
 } from "@/api";
@@ -41,7 +40,6 @@ function VersionView({ dataset: d, version: v, reload }: { dataset: Dataset; ver
   const registered = (useLocation().state as { registered?: boolean } | null)?.registered;
   const upload = useResource(() => api().getUpload(v.uploadId), [v.uploadId]);
   const splits = useResource(() => api().listSplits(d.id, v.version), [d.id, v.version]);
-  const experiments = api().experiments === "simulated";
 
   return (
     <div className="space-y-4" data-testid="dataset" data-version={v.version}>
@@ -73,15 +71,9 @@ function VersionView({ dataset: d, version: v, reload }: { dataset: Dataset; ver
               </select>
             </label>
           )}
-          {experiments ? (
-            <Link to={`../../experiments/new?dataset=${encodeURIComponent(d.id)}`} relative="path" className="btn btn-primary btn-sm">
-              Configure experiment
-            </Link>
-          ) : (
-            <button type="button" className="btn btn-quiet btn-sm" disabled title={EXPERIMENT_BACKEND_MISSING}>
-              Configure experiment · needs experiment backend
-            </button>
-          )}
+          <Link to={`../../experiments/new?dataset=${encodeURIComponent(d.id)}`} relative="path" className="btn btn-primary btn-sm">
+            Configure experiment
+          </Link>
         </div>
       </div>
 

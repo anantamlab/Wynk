@@ -1078,6 +1078,11 @@ class JobSummary(_View):
     created_at: str
     updated_at: str
     experiment_id: str
+    # What the job runs over, from its contract: a client finds a project's jobs through the
+    # project's datasets, and the lineage a promotion lands in (``{dataset_id}.{task_id}``).
+    dataset_id: str
+    dataset_version: int
+    task_id: str
     synthetic: bool
     artifact_available: bool
 
@@ -1095,6 +1100,9 @@ class JobView(_View):
     protocol_hash: str
     problem_id: str
     experiment_id: str
+    dataset_id: str
+    dataset_version: int
+    task_id: str
     synthetic: bool
     budget: dict[str, Any]
     strategies: list[str]
@@ -1301,6 +1309,9 @@ class ExperimentJobs:
             protocol_hash=identity["protocol_hash"],
             problem_id=identity["problem_id"],
             experiment_id=identity["experiment_id"],
+            dataset_id=definition.contract.dataset.dataset_id,
+            dataset_version=definition.contract.dataset.dataset_version,
+            task_id=definition.contract.task_id,
             synthetic=definition.synthetic,
             budget=definition.plan.budget.model_dump(mode="json"),
             strategies=[s.value for s in definition.plan.strategies],
@@ -1314,6 +1325,7 @@ class ExperimentJobs:
         for job_id in self.store.list_job_ids():
             job = self._job(job_id)
             identity = json.loads(job.identity_json)
+            contract = ExperimentJobDefinition.model_validate_json(job.definition_json).contract
             out.append(
                 JobSummary(
                     job_id=job.job_id,
@@ -1322,6 +1334,9 @@ class ExperimentJobs:
                     created_at=job.created_at,
                     updated_at=job.updated_at,
                     experiment_id=identity["experiment_id"],
+                    dataset_id=contract.dataset.dataset_id,
+                    dataset_version=contract.dataset.dataset_version,
+                    task_id=contract.task_id,
                     synthetic=identity["synthetic"],
                     artifact_available=job.artifact_json is not None,
                 )

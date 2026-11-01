@@ -283,3 +283,8 @@ export function errorResponse(v: unknown): ErrorResponseWire | null {
     return null;
   }
 }
+
+const num = (v: unknown, path: string): number => (typeof v === "number" && Number.isFinite(v) ? v : fail(path, "a number", v));
+
+/** The checks above, for the lifecycle decoders (`lifecycle.ts`). */
+export const check = { fail, object, str, optStr, bool, int, num, arr, oneOf, sha256 };

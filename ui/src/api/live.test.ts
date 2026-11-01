@@ -259,10 +259,11 @@ describe("live adapter: backend errors surface with their stable code and real r
 });
 
 describe("live adapter: experiments", () => {
-  it("has no experiment backend: every experiment call fails without a request", async () => {
+  it("runs real experiments through the lifecycle routes; the simulated views fail without a request", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>();
     const api = createLiveApi({ fetch });
-    expect(api.experiments).toBe("unavailable");
+    expect(api.experiments).toBe("live");
+    expect(api.lifecycle).not.toBeNull();
     for (const call of [
       () => api.listModels(),
       () => api.listExperiments(PID),
@@ -271,7 +272,7 @@ describe("live adapter: experiments", () => {
       () => api.getResults("e"),
       () => api.listWorkflows(PID),
     ])
-      await expect(call()).rejects.toMatchObject({ code: "experiment_backend_unavailable", kind: "not_implemented", message: expect.stringMatching(/#20–#23/) });
+      await expect(call()).rejects.toMatchObject({ code: "simulated_only", kind: "not_implemented" });
     expect(fetch).not.toHaveBeenCalled();
   });
 });

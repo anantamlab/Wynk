@@ -18,6 +18,7 @@ request -> response function; the HTTP adapter only moves bytes.
     POST /api/v1/datasets/{dataset_id}/versions/{version}/splits  SplitPlan
     GET  /api/v1/datasets/{dataset_id}/versions/{version}/splits
     GET  /api/v1/datasets/{dataset_id}/versions/{version}/splits/{splits_hash}
+    GET  /api/v1/models                                           registry entries (no endpoint)
     POST /api/v1/experiments                                      CreateExperiment (Idempotency-Key)
     GET  /api/v1/experiments
     GET  /api/v1/experiments/{job_id}
@@ -134,6 +135,7 @@ from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, PositiveInt, 
 
 from core.canonical import canonical_hash
 from core.dataset import SplitPlan
+from core.models import ModelCapability, ModelEntry, ModelPricing
 from core.task_contract import TaskContract
 from experiments.artifacts import ExperimentArtifacts
 from experiments.deployment import ChampionDeployments, DeploymentError, InferenceRuntime
@@ -425,6 +427,43 @@ class EvaluateTrigger(_Strict):
     policy_id: str | None = Field(default=None, pattern=r"^mp-[0-9a-f]{24}$")
 
 
+class ModelView(_Strict):
+    """A registry entry as a client may see it: what to pin (``model_hash``) and what it costs.
+    This view never returns the endpoint (operator infrastructure) or the provider credential.
+    (The pinned ``registry_entry`` inside provenance and workflow documents still carries its
+    endpoint, as before; it never carries a credential.)"""
+
+    name: str
+    provider: str
+    adapter: str
+    model_id: str
+    revision: str | None
+    model_hash: str
+    context_window: int | None
+    capabilities: list[ModelCapability]
+    pricing: ModelPricing | None
+    enabled: bool
+
+    @classmethod
+    def of(cls, entry: ModelEntry) -> ModelView:
+        return cls(
+            name=entry.name,
+            provider=entry.provider,
+            adapter=entry.adapter,
+            model_id=entry.model_id,
+            revision=entry.revision,
+            model_hash=entry.model_hash,
+            context_window=entry.context_window,
+            capabilities=list(entry.capabilities),
+            pricing=entry.pricing,
+            enabled=entry.enabled,
+        )
+
+
+class ModelList(_Strict):
+    models: list[ModelView]
+
+
 class PolicyRegistered(_Strict):
     policy_id: str
     policy: MonitoringPolicy
@@ -505,6 +544,7 @@ _ROUTES: list[tuple[str, re.Pattern[str], str]] = [
     ("POST", re.compile(rf"^datasets/{_ID}/versions/{_VERSION}/splits$"), "create_splits"),
     ("GET", re.compile(rf"^datasets/{_ID}/versions/{_VERSION}/splits$"), "list_splits"),
     ("GET", re.compile(rf"^datasets/{_ID}/versions/{_VERSION}/splits/{_HASH}$"), "get_splits"),
+    ("GET", re.compile(r"^models$"), "list_models"),
     ("POST", re.compile(r"^experiments$"), "create_experiment"),
     ("GET", re.compile(r"^experiments$"), "list_experiments"),
     ("GET", re.compile(rf"^experiments/{_ID}$"), "get_experiment"),
@@ -1015,6 +1055,15 @@ class ProductAPI:
         if self.jobs is None:
             raise ApiFailure("experiment_backend_unavailable", "this server stores no experiments")
         return self.jobs
+
+    def _list_models(self, request: _Request, _: tuple[str, ...]) -> ApiResponse:
+        """The registry experiments and deployments bind to (``--model-registry``), re-read on
+        every request like an invocation does, so a client pins what this server would bind."""
+        self._params(request, set())
+        runtime = self.deployments.runtime if self.deployments is not None else None
+        if runtime is None:
+            raise ApiFailure("experiment_backend_unavailable", "this server has no model registry")
+        return _ok(ModelList(models=[ModelView.of(e) for e in runtime.registry().entries]))
 
     def _create_experiment(self, request: _Request, _: tuple[str, ...]) -> ApiResponse:
         self._params(request, set())
