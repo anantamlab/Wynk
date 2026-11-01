@@ -266,7 +266,11 @@ def erased_store(tmp_path):
             f"UPDATE feedback_payloads SET envelope=X'{ERASED.hex()}' WHERE feedback_id LIKE '%1'",
             "erasure record",
         ),  # erased without a record
-        ("UPDATE feedback_payloads SET envelope=X'574B5A' WHERE feedback_id LIKE '%0'", None),
+        (  # a sealed-looking envelope: only the stay-erased guard refuses it
+            f"UPDATE feedback_payloads SET envelope=X'{b'WYNKBLOB-back'.hex()}' "
+            "WHERE feedback_id LIKE '%0'",
+            "stays erased",
+        ),
         ("DELETE FROM feedback_erasures", None),
         ("UPDATE feedback_erasures SET erasure_json='{}'", None),
         ("UPDATE feedback_erasures SET payload_sha256='x'", None),
@@ -377,3 +381,13 @@ def test_a_frozen_example_erased_offline_blocks_its_resumed_reoptimization(tmp_p
     assert row.state is ReoptState.FAILED
     assert json.loads(row.detail)["reason"] == "frozen_feedback_erased"
     assert [v.dataset_version for v in world.datasets.get_dataset("capitals")] == versions_before
+
+
+def test_a_payload_cannot_be_inserted_already_erased(tmp_path):
+    from store.monitoring import FeedbackRow
+
+    store = SQLiteMonitoringStore(tmp_path / "m.sqlite3")
+    fb = FeedbackRow("fb-" + "2" * 24, "inf-" + "2" * 24, "wv-1", "l", True, "t", "{}", "t")
+    with pytest.raises(Exception, match="erasure record"):
+        store.put_feedback(fb, ("2" * 64, ERASED))
+    assert store.feedback(fb.feedback_id) is None
