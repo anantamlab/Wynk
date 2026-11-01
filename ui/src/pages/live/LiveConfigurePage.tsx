@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { api, type CreateExperimentWire, type DatasetSpecWire, type JobWire, type ModelWire, type StrategyWire } from "@/api";
 import { ApiErrorState, Field, LoadingState, Panel } from "@/components/app/ui";
-import { useIdempotentSend } from "@/lib/idempotency";
+import { DEFAULT_POLICY, useIdempotentSend } from "@/lib/idempotency";
 import { useResource } from "@/lib/useResource";
 import { useProject } from "@/pages/ProjectLayout";
 import { lifecycle, STRATEGY_LABEL } from "./common";
@@ -101,7 +101,8 @@ export function LiveConfigurePage() {
   const [maxCandidates, setMaxCandidates] = useState(4);
   const [seeds, setSeeds] = useState("0");
   const [caps, setCaps] = useState<Record<string, number>>(DEFAULT_CAPS);
-  const send = useIdempotentSend<JobWire>("exp");
+  // an unconfirmed creation survives a reload of the page (workspace + project)
+  const send = useIdempotentSend<JobWire>("exp", DEFAULT_POLICY, { operation: `create-experiment:${project.id}` });
 
   const dataset = datasets.state === "ready" ? datasets.data.find((d) => d.id === datasetId) : undefined;
   useEffect(() => {
@@ -149,6 +150,7 @@ export function LiveConfigurePage() {
   };
   const fingerprint = body ? JSON.stringify(body) : "";
   const sending = send.state.phase === "sending";
+  const block = body ? send.blocks(fingerprint) : null;
 
   if (datasets.state === "loading" || models.state === "loading") return <LoadingState label="Loading datasets and models" />;
   if (datasets.state === "error") return <ApiErrorState error={datasets.cause} title="Could not load datasets" onRetry={datasets.reload} />;
@@ -292,9 +294,10 @@ export function LiveConfigurePage() {
         onNewKey={async () => {
           if (body) finish(await send.sendWithNewKey(fingerprint, create));
         }}
+        block={block}
       />
       <div className="flex justify-end">
-        <button type="submit" className="btn btn-primary" disabled={!body || sending || send.held === fingerprint}>
+        <button type="submit" className="btn btn-primary" disabled={!body || sending || block !== null}>
           {sending ? "Creating…" : "Create experiment"}
         </button>
       </div>

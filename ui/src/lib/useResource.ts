@@ -26,9 +26,9 @@ interface Options<T> {
 
 /**
  * Loads data through the adapter and tracks loading, error and ready states. A failed poll
- * keeps the last good data on screen rather than blanking it, marks it `stale`, and, when the
- * failure is passing (`POLL_AGAIN`), retries with exponential backoff until the server answers
- * again. Any other failure stops the polling.
+ * that is passing (`POLL_AGAIN`) keeps the last good data on screen rather than blanking it,
+ * marks it `stale`, and retries with exponential backoff until the server answers again. Any
+ * other failure (401/403 above all) drops the data, shows the error and stops the polling.
  */
 export function useResource<T>(load: () => Promise<T>, deps: unknown[], options: Options<T> = {}): Resource<T> {
   // `has`: data holds an answer (which may itself be null, e.g. "no promotion yet")
@@ -61,13 +61,14 @@ export function useResource<T>(load: () => Promise<T>, deps: unknown[], options:
       } catch (err) {
         if (!alive) return;
         const { pollMs, maxPollMs } = opts.current;
+        const passing = err instanceof ApiError && POLL_AGAIN.has(err.code);
+        // only a passing failure keeps the last answer (marked stale) and is polled again. A
+        // refusal (401/403, not found, a contract mismatch) removes what is on screen, because the
+        // person may no longer see it, and stays until they reload.
         setState((s) =>
-          s.has && pollMs ? { ...s, stale: err } : { data: null, has: false, error: errorMessage(err), cause: err, loading: false },
+          s.has && pollMs && passing ? { ...s, stale: err } : { data: null, has: false, error: errorMessage(err), cause: err, loading: false },
         );
-        // only a passing failure is polled again; a refusal (401/403, not found, a contract
-        // mismatch) stays on screen until the person reloads
-        if (pollMs && err instanceof ApiError && POLL_AGAIN.has(err.code))
-          timer = setTimeout(run, Math.min(maxPollMs ?? pollMs * 8, pollMs * 2 ** ++failures));
+        if (pollMs && passing) timer = setTimeout(run, Math.min(maxPollMs ?? pollMs * 8, pollMs * 2 ** ++failures));
       }
     };
     run();

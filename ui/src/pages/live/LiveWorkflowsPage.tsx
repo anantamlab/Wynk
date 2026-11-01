@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { ApiError, type DeploymentWire, type FieldWire, type InferenceWire, type InvokeTarget, type WorkflowVersionWire } from "@/api";
 import { ApiErrorState, EmptyState, Fact, LoadingState, Panel } from "@/components/app/ui";
 import { date } from "@/lib/format";
-import { useIdempotentSend } from "@/lib/idempotency";
+import { DEFAULT_POLICY, useIdempotentSend } from "@/lib/idempotency";
 import { useResource } from "@/lib/useResource";
 import { useProject } from "@/pages/ProjectLayout";
 import { useProjectJobs } from "./LiveExperimentsPage";
@@ -234,7 +234,8 @@ function InvokePanel({ lineage, deployment, versions }: { lineage: string; deplo
   const [targetId, setTargetId] = useState("production");
   const [values, setValues] = useState<Values>({});
   const [invalid, setInvalid] = useState<string | null>(null);
-  const send = useIdempotentSend<InferenceWire>("inf");
+  // an unconfirmed invocation survives a reload of the page (workspace + lineage)
+  const send = useIdempotentSend<InferenceWire>("inf", DEFAULT_POLICY, { operation: `invoke:${lineage}` });
 
   if (targets.length === 0) return null;
   const chosen = targets.find((t) => t.id === targetId) ?? targets[0];
@@ -264,9 +265,10 @@ function InvokePanel({ lineage, deployment, versions }: { lineage: string; deplo
   };
   // the original request, not the form as it is now
   const retry = () => void send.retry();
-  // an ambiguous, changed or conflicting request is sent again only with a new key, deliberately
+  // an ambiguous, changed or conflicting request, or a different one while another is still
+  // uncertain, is sent only with a new key, deliberately
   const now = toInputs(fields, values);
-  const isHeld = send.held !== null && !("error" in now) && send.held === JSON.stringify([chosen.target, now.inputs]);
+  const block = "error" in now ? null : send.blocks(JSON.stringify([chosen.target, now.inputs]));
   const result = send.state.phase === "settled" && send.state.kind === "done" ? send.state.value : null;
 
   return (
@@ -325,12 +327,12 @@ function InvokePanel({ lineage, deployment, versions }: { lineage: string; deplo
             {invalid}
           </p>
         )}
-        <button type="submit" className="btn btn-primary btn-sm" disabled={busy || isHeld}>
+        <button type="submit" className="btn btn-primary btn-sm" disabled={busy || block !== null}>
           {busy ? "Running…" : `Run on ${targetLabel(chosen.target)}`}
         </button>
       </form>
       <div className="mt-3 space-y-3">
-        <SendStatus state={send.state} noun="invocation" onRetry={retry} onNewKey={again} />
+        <SendStatus state={send.state} noun="invocation" onRetry={retry} onNewKey={again} block={block} />
         {result && <InferenceResult r={result} />}
       </div>
     </div>

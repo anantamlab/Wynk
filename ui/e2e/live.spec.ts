@@ -215,15 +215,45 @@ async function modelHash(request: APIRequestContext, name: string): Promise<stri
   return m.model_hash;
 }
 
-/** Fills the live configure screen; returns its submit button. */
-async function configure(page: Page, request: APIRequestContext, pid: string, datasetId: string, model: string, taskId: string) {
-  await page.goto(`/projects/${pid}/experiments/new?dataset=${datasetId}`);
+/** Fills the configure screen the page shows now; returns its submit button. */
+async function fillConfigure(page: Page, request: APIRequestContext, model: string, taskId: string, instructions = INSTRUCTIONS) {
   await page.getByLabel("Model", { exact: true }).selectOption(await modelHash(request, model));
   await page.getByLabel("Task id", { exact: true }).fill(taskId);
-  await page.getByLabel("Instructions").fill(INSTRUCTIONS);
-  const submit = page.getByRole("button", { name: "Create experiment" });
+  await page.getByLabel("Instructions").fill(instructions);
+  return page.getByRole("button", { name: "Create experiment" });
+}
+
+/** Opens and fills the live configure screen; returns its submit button. */
+async function configure(page: Page, request: APIRequestContext, pid: string, datasetId: string, model: string, taskId: string) {
+  await page.goto(`/projects/${pid}/experiments/new?dataset=${datasetId}`);
+  const submit = await fillConfigure(page, request, model, taskId);
   await expect(submit).toBeEnabled();
   return submit;
+}
+
+/** The uncertain idempotent requests this tab keeps across a reload (ui/src/lib/pendingKeys.ts). */
+const pendingRecords = (page: Page) =>
+  page.evaluate(() => Object.entries(sessionStorage).filter(([name]) => name.startsWith("wynk.pending-request.v1:")).map(([, v]) => v));
+
+/**
+ * While `dropping`, the server receives and handles every matching POST, but the browser never sees
+ * an answer (the connection resets). Records each request's Idempotency-Key, dropped or not.
+ */
+async function dropAnswers(page: Page, pattern: string) {
+  const state = { keys: [] as string[], handled: 0, dropping: true };
+  await page.route(pattern, async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    state.keys.push(route.request().headers()["idempotency-key"] ?? "");
+    if (!state.dropping) return route.fallback();
+    try {
+      await route.fetch();
+      state.handled++;
+      await route.abort("connectionreset");
+    } catch {
+      // the page reloaded before the answer: it is lost either way
+    }
+  });
+  return state;
 }
 
 /** Lets the server answer the first matching POST, then drops the answer before the browser sees it. */
@@ -313,28 +343,119 @@ test("live: experiment → results → promotion → publish → stage → produ
   await expect(panel.getByTestId("production-version")).toHaveText(versionId);
   await expect(panel).toHaveAttribute("data-revision", "2");
 
-  // Inference: the first answer is lost; the retry with the same key gets the original output back
-  const invokeKeys = await dropFirstResponse(page, `**/api/v1/deployments/${lineage}/invoke`);
+  // Inference: the server runs it, the answer is lost, and the page reloads before any retry
+  // succeeds. The same values go out again with the SAME key, and the server answers with the
+  // original output; nothing runs twice.
+  const invokeDrop = await dropAnswers(page, `**/api/v1/deployments/${lineage}/invoke`);
   const invoke = panel.getByTestId("invoke-panel");
-  for (const [name, value] of Object.entries(NEW_ORDER)) await invoke.getByRole("textbox", { name: new RegExp(`^${name}`) }).fill(value);
+  const fillOrder = async () => {
+    for (const [name, value] of Object.entries(NEW_ORDER)) await invoke.getByRole("textbox", { name: new RegExp(`^${name}`) }).fill(value);
+  };
+  await fillOrder();
+  await invoke.getByRole("button", { name: /^Run on production/ }).click();
+  await expect.poll(() => invokeDrop.handled, { timeout: 30_000 }).toBeGreaterThanOrEqual(1);
+  const firstKey = invokeDrop.keys[0];
+  const records = await pendingRecords(page);
+  expect(records.map((r) => JSON.parse(r).key)).toEqual([firstKey]);
+  for (const value of Object.values(NEW_ORDER)) expect(records[0]).not.toContain(value); // the key, never the inputs
+  invokeDrop.dropping = false;
+  await page.reload();
+  await expect(invoke.getByTestId("send-status")).toHaveAttribute("data-phase", "recovered");
+  await expect(invoke.getByTestId("idempotency-key")).toHaveText(firstKey);
+  await fillOrder();
   await invoke.getByRole("button", { name: /^Run on production/ }).click();
   await expect(invoke.getByTestId("inference-output")).toContainText('"answer": "Lincoln"', { timeout: 30_000 });
   await expect(invoke.getByTestId("send-status")).toHaveAttribute("data-phase", "replayed");
-  expect(invokeKeys).toHaveLength(2);
-  expect(invokeKeys[1]).toBe(invokeKeys[0]);
+  expect(new Set(invokeDrop.keys)).toEqual(new Set([firstKey])); // every attempt, before and after the reload
+  expect(await pendingRecords(page)).toEqual([]);
   const inferenceId = (await invoke.getByTestId("inference").getAttribute("data-inference-id"))!;
   const stored = (await api(request, "GET", `inferences/${inferenceId}`)).body;
   expect(stored.status).toBe("SUCCEEDED");
   expect(stored.workflow_version).toBe(versionId);
 
   // Running it again is a new intent: a new key and a new invocation
+  const sent = invokeDrop.keys.length;
   await invoke.getByRole("button", { name: /^Run on production/ }).click();
   await expect(invoke.getByTestId("inference")).not.toHaveAttribute("data-inference-id", inferenceId);
   await expect(invoke.getByTestId("inference-output")).toContainText("Lincoln");
-  expect(invokeKeys).toHaveLength(3);
-  expect(invokeKeys[2]).not.toBe(invokeKeys[0]);
+  expect(invokeDrop.keys).toHaveLength(sent + 1);
+  expect(invokeDrop.keys[sent]).not.toBe(firstKey);
 
   expect(mockCode).toEqual([]);
+});
+
+test("live: a lost create answer and a reload: the same values recover the same key, one experiment; other values are not sent", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  const mockCode = watchForMockCode(page);
+  const { pid, datasetId } = await orderDesk(request);
+  const drop = await dropAnswers(page, "**/api/v1/experiments");
+  await (await configure(page, request, pid, datasetId, "e2e-desk-slow", "reload")).click();
+  await expect.poll(() => drop.handled, { timeout: 20_000 }).toBeGreaterThanOrEqual(1); // the server created it; the browser never heard
+  const key = drop.keys[0];
+  const records = await pendingRecords(page);
+  expect(records.map((r) => JSON.parse(r).key)).toEqual([key]);
+  expect(records[0]).not.toContain(INSTRUCTIONS); // the key and a digest, never the request
+
+  drop.dropping = false; // the network is back
+  await page.reload();
+  await expect(page.getByTestId("send-status")).toHaveAttribute("data-phase", "recovered");
+  await expect(page.getByTestId("idempotency-key")).toHaveText(key);
+
+  // different values while the first creation is unconfirmed: nothing is sent behind the person's back
+  const sent = drop.keys.length;
+  const submit = await fillConfigure(page, request, "e2e-desk-slow", "reload", `${INSTRUCTIONS} Be brief.`);
+  await expect(submit).toBeDisabled();
+  await expect(page.getByTestId("send-blocked")).toContainText(key);
+
+  // the same values again: the same key, and the server answers with the experiment it created
+  await fillConfigure(page, request, "e2e-desk-slow", "reload");
+  await expect(submit).toBeEnabled();
+  await submit.click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${pid}/experiments/j-[0-9a-f]+$`), { timeout: 20_000 });
+  await expect(page.getByTestId("create-replayed")).toBeVisible();
+  expect(drop.keys.length).toBe(sent + 1);
+  expect(new Set(drop.keys)).toEqual(new Set([key]));
+  const jobId = page.url().split("/").pop()!;
+  const jobs = (await api(request, "GET", "experiments")).body.jobs.filter((j: { dataset_id: string }) => j.dataset_id === datasetId);
+  expect(jobs.map((j: { job_id: string }) => j.job_id)).toEqual([jobId]); // one intent, one experiment
+  expect(await pendingRecords(page)).toEqual([]);
+  expect((await api(request, "POST", `experiments/${jobId}/cancel`)).status).toBe(200); // the slow model need not finish
+  expect(mockCode).toEqual([]);
+});
+
+test("live: a revoked key ends the live view: the cached experiment is removed and polling stops", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  const { pid, datasetId } = await orderDesk(request);
+  const created = await api(request, "POST", "workspace/keys", { name: `e2e-revoked-${unique()}`, scopes: ["read"] });
+  expect(created.status).toBe(201);
+  const secret: string = created.body.secret;
+  // this page's experiment polls reach the real API with that read-only key, as if the UI server held it
+  const polls: number[] = [];
+  await page.route(
+    (url) => /^\/api\/v1\/experiments\/j-[0-9a-f]+$/.test(url.pathname),
+    async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      const browser = Object.entries(route.request().headers()).filter(([name]) => name !== "host" && name !== "authorization");
+      const headers = { ...Object.fromEntries(browser), authorization: `Bearer ${secret}` };
+      const response = await route.fetch({ url: `http://127.0.0.1:8790${new URL(route.request().url()).pathname}`, headers });
+      polls.push(response.status());
+      await route.fulfill({ response });
+    },
+  );
+  await (await configure(page, request, pid, datasetId, "e2e-desk-slow", "revoke")).click();
+  const root = page.getByTestId("live-experiment");
+  await expect(root).toHaveAttribute("data-state", /PENDING|RUNNING/, { timeout: 20_000 });
+  const jobId = (await root.getAttribute("data-job-id"))!;
+  await expect.poll(() => polls.filter((s) => s === 200).length, { timeout: 20_000 }).toBeGreaterThanOrEqual(2);
+
+  expect((await api(request, "POST", `workspace/keys/${created.body.key.key_id}/revoke`)).status).toBe(200);
+  await expect(page.locator('[data-error-code="unauthenticated"]')).toBeVisible({ timeout: 15_000 });
+  await expect(root).toHaveCount(0); // the experiment this key may no longer read is gone from the screen
+  expect(polls.filter((s) => s === 401)).toHaveLength(1);
+  const after = polls.length;
+  await page.waitForTimeout(4_000); // four healthy poll intervals (1 s)
+  expect(polls).toHaveLength(after); // polling stopped
+  expect((await api(request, "POST", `experiments/${jobId}/cancel`)).status).toBe(200);
 });
 
 test("live: a running experiment shows real progress and can be cancelled", async ({ page, request }) => {

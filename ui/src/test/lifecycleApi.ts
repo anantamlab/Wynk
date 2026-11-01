@@ -41,11 +41,12 @@ export const fail = (status: number, code: string, message = `${code} (test)`, d
   body: { error: { code, message, details } },
 });
 
-type Route = Reply | Reply[] | ((call: Call, n: number) => Reply);
+type Route = Reply | Reply[] | ((call: Call, n: number) => Reply | Promise<Reply>);
 
 /**
  * A fetch answering `"METHOD /api/v1/path"` from a table. An array answers in order and repeats its
- * last reply; a function sees the call and how many times the route was called before.
+ * last reply; a function sees the call and how many times the route was called before, and may
+ * answer later (or never: a request still in flight).
  */
 export function server(routes: Record<string, Route>) {
   const calls: Call[] = [];
@@ -59,7 +60,7 @@ export function server(routes: Record<string, Route>) {
     const n = seen.get(route) ?? 0;
     seen.set(route, n + 1);
     const r = routes[route];
-    const reply = Array.isArray(r) ? r[Math.min(n, r.length - 1)] : typeof r === "function" ? r(call, n) : r;
+    const reply = Array.isArray(r) ? r[Math.min(n, r.length - 1)] : typeof r === "function" ? await r(call, n) : r;
     if (!reply) return new Response("not routed in test", { status: 599 });
     if (reply instanceof Error) throw reply;
     return new Response(JSON.stringify(reply.body), { status: reply.status, headers: { "Content-Type": "application/json", ...reply.headers } });
