@@ -107,6 +107,22 @@ workflow version and inference ids, API keys) and values that depend on the fake
 random port (the model hash and what pins it) are not facts. Timings are reported but never
 compared.
 
+## Release-readiness suite
+
+`python -m tests.release_readiness --out DIR [--with-e2e] [--reference lifecycle-report.json]`
+is a sibling of this harness. It runs this harness unchanged, so the digests stay the regression
+check. It also runs named gates over the repository's tests:
+
+* restart recovery; rollback and fencing; idempotency and ambiguous outcomes
+* cross-workspace authorization; encryption and rotation; migration
+* retention and erasure; PII and outbound controls; cost accounting; provenance
+* the Playwright UI lifecycle (`--with-e2e`)
+* a secret-leakage scan of everything the run wrote
+
+Each gate reports PASS or FAIL with exact pass, fail and skip counts from JUnit XML. A gate
+fails if no test ran. `live_provider_smoke` and `production_deployment` always report BLOCKED.
+Overall: FAIL, else BLOCKED, else PASS.
+
 ## Limits
 
 - The harness does not drive the browser. The live UI lifecycle is covered by

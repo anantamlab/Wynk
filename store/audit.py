@@ -72,6 +72,17 @@ DETAIL_KEYS = frozenset(
         "dataset_version",
         "uploads",
         "upload_id",
+        # Phase 5: erasure, migration, outbound policy (ids, hashes, counts and codes only)
+        "fields",
+        "policy_hash",
+        "payload_sha256",
+        "residual_copies",
+        "fully_erased",
+        "copies",
+        "migrated",
+        "legacy",
+        "mode",
+        "revision",
     }
 )
 GENESIS = "0" * 64

@@ -66,10 +66,12 @@ from api.product import (
     _ok,
     _Request,
 )
+from core.canonical import canonical_json
 from experiments.deployment import ChampionDeployments, InferenceRuntime
 from experiments.jobs import ExperimentJobs, JobRuntime, JobWorker
 from experiments.monitoring import ProductionMonitor
 from experiments.promotion import ChampionPromotions
+from ingestion.outbound import DEFAULT_POLICY, UNSCREENED, OutboundPolicy
 from ingestion.sensitive import SensitiveDataPolicy, install_log_redaction
 from ingestion.service import SYSTEM_RETENTION_ACTOR, DatasetService, IngestLimits
 from memory.production import PriorService, source_live_from
@@ -165,7 +167,10 @@ WRITE_ROUTES = frozenset(
 )
 INVOKE_ROUTES = frozenset({"invoke_workflow", "invoke_production"})
 # #33: irreversible deletion and the audit trail are an OWNER's (``admin``) only; export is a read
-ADMIN_PRODUCT_ROUTES = frozenset({"delete_upload", "delete_dataset", "list_audit"})
+# Phase 5: erasing a feedback payload is irreversible too
+ADMIN_PRODUCT_ROUTES = frozenset(
+    {"delete_upload", "delete_dataset", "list_audit", "erase_feedback"}
+)
 
 
 def route_scope(name: str, method: str) -> str:
@@ -526,6 +531,7 @@ class TenantRouter:
             promotions,
             self.inference,
             outputs=self.keyring.cipher(ws),  # a keyed invocation's output, sealed for retries
+            outbound=lambda: self.outbound_policy(ws)[0],  # F2, read on every request
         )
         monitor = ProductionMonitor(
             deployments,
@@ -658,12 +664,49 @@ class TenantRouter:
                 ws_id, user.user_id, key_name, list(SCOPES), user.user_id, None, key_plaintext
             )
             SQLiteIdentityStore.insert_key(c, key)
+            # F2: a new workspace screens outbound data from its first request (revision 1)
+            SQLiteIdentityStore.insert_outbound_policy(
+                c, ws_id, _policy_json(DEFAULT_POLICY), user.user_id, self._now()
+            )
             return ws, member, key, plaintext
 
         with self._identity_lock:
             out = self.identity.write(create)
         self.tenant(ws_id)  # bind the partition now
         return out
+
+    # -- outbound data policy (F2) --------------------------------------------------------
+    def outbound_policy(self, workspace_id: str) -> tuple[OutboundPolicy, int | None]:
+        """The policy in force and its revision (``None``: the workspace predates the policy and
+        keeps ``off`` until an operator sets one). A stored revision that does not parse fails
+        closed (``TenantIntegrityError``): it is never replaced by a guess."""
+        stored = self.identity.outbound_policy(workspace_id)
+        if stored is None:
+            return UNSCREENED, None
+        try:
+            return OutboundPolicy.model_validate_json(stored[1]), stored[0]
+        except ValueError:
+            raise TenantIntegrityError(
+                f"the outbound policy of {workspace_id} (revision {stored[0]}) does not parse"
+            ) from None
+
+    def set_outbound_policy(
+        self, workspace_id: str, policy: OutboundPolicy, set_by: str
+    ) -> tuple[int, bool]:
+        """Append a revision (``bool``: a change; the same policy again appends nothing)."""
+        check_workspace_id(workspace_id)
+        if self.identity.workspace(workspace_id) is None:
+            raise TenantIntegrityError(f"no workspace {workspace_id}")
+        with self._identity_lock:
+            current, revision = self.outbound_policy(workspace_id)
+            if revision is not None and current == policy:
+                return revision, False
+            rev = self.identity.write(
+                lambda c: SQLiteIdentityStore.insert_outbound_policy(
+                    c, workspace_id, _policy_json(policy), set_by, self._now()
+                )
+            )
+        return int(rev), True
 
     def bootstrap(
         self,
@@ -1102,6 +1145,10 @@ def _product_route(method: str, path: str) -> str | None:
     return None
 
 
+def _policy_json(policy: OutboundPolicy) -> str:
+    return canonical_json(policy.model_dump(mode="json"))
+
+
 def _when(stamp: str) -> datetime:
     value = datetime.fromisoformat(stamp)
     return value if value.tzinfo else value.replace(tzinfo=UTC)
@@ -1264,6 +1311,177 @@ def purge_expired(
     return out
 
 
+# -- Phase 5 operations -----------------------------------------------------------------------
+SYSTEM_OPERATOR_ACTOR = "system:operator"
+FEEDBACK_RETENTION_ENV = "WYNK_FEEDBACK_RETENTION_DAYS"
+
+
+def feedback_retention_days_from_env(env: Mapping[str, str] | None = None) -> int | None:
+    """``WYNK_FEEDBACK_RETENTION_DAYS`` (>= 1), or ``None``: keep feedback until erased. Nothing
+    is erased automatically; ``purge-feedback`` applies it (run it on a schedule)."""
+    raw = (os.environ if env is None else env).get(FEEDBACK_RETENTION_ENV, "").strip()
+    if not raw:
+        return None
+    if not raw.isdigit() or int(raw) < 1:
+        raise ValueError(f"{FEEDBACK_RETENTION_ENV} must be a whole number of days >= 1")
+    return int(raw)
+
+
+def _workspaces(router: TenantRouter, workspace_id: str | None) -> list[str]:
+    ids = [w.workspace_id for w in router.identity.workspaces()]
+    if workspace_id is None:
+        return ids
+    if workspace_id not in ids:
+        raise TenantIntegrityError(f"no workspace {workspace_id}")
+    return [workspace_id]
+
+
+def migrate_feedback(
+    router: TenantRouter,
+    *,
+    backup_dir: Path | str | None,
+    dry_run: bool = False,
+    remove_backup: bool = False,
+    workspace_id: str | None = None,
+) -> dict[str, Any]:
+    """Seal every legacy feedback record of every (or one) workspace: an offline, verified
+    rebuild of its monitoring store (``experiments.feedback_migration``). Stop the server first.
+    ``dry_run`` reads only. The backup holds the old plaintext: keep it outside the data dir."""
+    from experiments.feedback_migration import migrate
+
+    if not dry_run:
+        if backup_dir is None:
+            raise ValueError("--backup-dir is required (the old store is backed up first)")
+        if Path(backup_dir).resolve().is_relative_to(router.root.resolve()):
+            raise ValueError("keep --backup-dir outside the data directory")
+    out: dict[str, Any] = {}
+    actor = {"user_id": SYSTEM_OPERATOR_ACTOR}
+    for ws in _workspaces(router, workspace_id):
+        db = router.root / "workspaces" / ws / "monitoring.sqlite3"
+        target = Path(backup_dir or ".") / ws
+        audit = None if dry_run else router.tenant(ws).api
+        if audit is not None and not audit.record(
+            actor, "feedback.migrate", "workspace", ws, "requested"
+        ):
+            raise RuntimeError("the audit trail is unavailable; migration stopped")
+        report = migrate(
+            db, router.keyring.cipher(ws), backup_dir=target, dry_run=dry_run,
+            remove_backup=remove_backup,
+        )  # fmt: skip
+        if audit is not None:
+            audit.record(
+                actor,
+                "feedback.migrate",
+                "workspace",
+                ws,
+                "ok",
+                details={
+                    "status": report["status"],
+                    "migrated": len(report.get("rewritten", [])),
+                    "legacy": len(report["legacy_ids"]),
+                },
+            )
+        out[ws] = report
+    return out
+
+
+def erase_feedback(
+    router: TenantRouter,
+    workspace_id: str,
+    feedback_id: str,
+    *,
+    accept_residual_copies: bool = False,
+    reason: str = "request",
+    actor: str = SYSTEM_OPERATOR_ACTOR,
+) -> dict[str, Any]:
+    """An operator's erasure request for one feedback, audited like the API route."""
+    api = router.tenant(workspace_id).api
+    if api.monitor is None:
+        raise RuntimeError("this workspace has no monitor")
+    who = {"user_id": actor}
+    if not api.record(who, "feedback.erase", "feedback", feedback_id, "requested"):
+        raise RuntimeError("the audit trail is unavailable; nothing was erased")
+    try:
+        view = api.monitor.erase_feedback(
+            feedback_id,
+            reason=reason,  # type: ignore[arg-type]
+            actor=who,
+            accept_residual_copies=accept_residual_copies,
+        )
+    except product.MonitoringError as exc:
+        api.record(who, "feedback.erase", "feedback", feedback_id, "refused", exc.code)
+        raise
+    api.record(
+        who,
+        "feedback.erase",
+        "feedback",
+        feedback_id,
+        "ok",
+        details={
+            "created": view.created,
+            "reason": view.reason,
+            "fully_erased": view.fully_erased,
+            "residual_copies": len(view.residual_copies),
+        },
+    )
+    return view.model_dump(mode="json")
+
+
+def purge_feedback(router: TenantRouter, *, now: datetime | None = None) -> dict[str, Any]:
+    """Apply ``WYNK_FEEDBACK_RETENTION_DAYS`` in every workspace. Conservative: a feedback whose
+    erasure would leave copies, is pending, or is not sealed yet is SKIPPED and reported -
+    retention never accepts residual copies on anyone's behalf."""
+    days = feedback_retention_days_from_env()
+    out: dict[str, Any] = {"retention_days": days, "workspaces": {}}
+    if days is None:
+        return out | {"status": "keep (no retention configured; nothing erased)"}
+    for ws in _workspaces(router, None):
+        api = router.tenant(ws).api
+        erased, skipped = [], {}
+        for fid in api.monitor.expired_feedback(days, now) if api.monitor else []:
+            try:
+                erase_feedback(router, ws, fid, reason="retention", actor=SYSTEM_RETENTION_ACTOR)
+                erased.append(fid)
+            except product.MonitoringError as exc:
+                skipped[fid] = exc.code + ":" + str(exc.details.get("reason") or "")
+        out["workspaces"][ws] = {"erased": erased, "skipped": skipped}
+    return out
+
+
+def outbound_policy_command(
+    router: TenantRouter, workspace_id: str, spec: str | None
+) -> dict[str, Any]:
+    """Show (``spec`` None) or set a workspace's outbound policy, audited."""
+    if spec is not None:
+        policy = OutboundPolicy.parse(spec)
+        api = router.tenant(workspace_id).api
+        who = {"user_id": SYSTEM_OPERATOR_ACTOR}
+        if not api.record(who, "outbound_policy.set", "workspace", workspace_id, "requested"):
+            raise RuntimeError("the audit trail is unavailable; nothing was changed")
+        revision, changed = router.set_outbound_policy(workspace_id, policy, SYSTEM_OPERATOR_ACTOR)
+        api.record(
+            who,
+            "outbound_policy.set",
+            "workspace",
+            workspace_id,
+            "ok",
+            details={
+                "mode": policy.mode.value,
+                "revision": revision,
+                "created": changed,
+                "policy_hash": policy.policy_hash,
+            },
+        )
+    policy, revision = router.outbound_policy(workspace_id)
+    return {
+        "workspace_id": workspace_id,
+        "revision": revision,
+        "source": "legacy (never set: off)" if revision is None else "workspace",
+        "policy": policy.model_dump(mode="json"),
+        "policy_hash": policy.policy_hash,
+    }
+
+
 # -- CLI ------------------------------------------------------------------------------------
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m api.tenancy", description=__doc__.split("\n")[0])
@@ -1291,6 +1509,27 @@ def main(argv: list[str] | None = None) -> int:
     r = sub.add_parser("purge-expired", help="apply WYNK_UPLOAD_RETENTION_DAYS, collect blobs")
     r.add_argument("--data-dir", type=Path, required=True)
     r.add_argument("--gc-older-than-s", type=float, default=3600.0)
+    mf = sub.add_parser(
+        "migrate-feedback", help="seal legacy feedback (offline, verified rebuild; stop the server)"
+    )
+    mf.add_argument("--data-dir", type=Path, required=True)
+    mf.add_argument("--workspace-id")
+    mf.add_argument("--backup-dir", type=Path, help="outside the data dir; required unless dry run")
+    mf.add_argument("--dry-run", action="store_true", help="report counts and ids; write nothing")
+    mf.add_argument(
+        "--remove-backup", action="store_true", help="delete the backup after the swap verified"
+    )
+    ef = sub.add_parser("erase-feedback", help="erase one feedback's sealed payload (audited)")
+    ef.add_argument("--data-dir", type=Path, required=True)
+    ef.add_argument("--workspace-id", required=True)
+    ef.add_argument("--feedback-id", required=True)
+    ef.add_argument("--accept-residual-copies", action="store_true")
+    pf = sub.add_parser("purge-feedback", help="apply WYNK_FEEDBACK_RETENTION_DAYS (conservative)")
+    pf.add_argument("--data-dir", type=Path, required=True)
+    op = sub.add_parser("outbound-policy", help="show or set a workspace's outbound data policy")
+    op.add_argument("--data-dir", type=Path, required=True)
+    op.add_argument("--workspace-id", required=True)
+    op.add_argument("--set", dest="spec", help="off | screen | screen:email=block,phone=block")
     args = p.parse_args(argv)
     if args.command == "generate-data-key":
         # keep it OUT of the data dir: an env var / secret manager / a file elsewhere
@@ -1311,6 +1550,35 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "purge-expired":
         print(json.dumps(purge_expired(router, gc_older_than_s=args.gc_older_than_s), indent=1))
+        return 0
+    if args.command == "migrate-feedback":
+        out = migrate_feedback(
+            router,
+            backup_dir=args.backup_dir,
+            dry_run=args.dry_run,
+            remove_backup=args.remove_backup,
+            workspace_id=args.workspace_id,
+        )
+        print(json.dumps(out, indent=1))
+        return 0
+    if args.command == "erase-feedback":
+        try:
+            out = erase_feedback(
+                router,
+                args.workspace_id,
+                args.feedback_id,
+                accept_residual_copies=args.accept_residual_copies,
+            )
+        except product.MonitoringError as exc:
+            print(json.dumps({"error": exc.code, "message": str(exc), "details": exc.details}))
+            return 1
+        print(json.dumps(out, indent=1))
+        return 0
+    if args.command == "purge-feedback":
+        print(json.dumps(purge_feedback(router), indent=1))
+        return 0
+    if args.command == "outbound-policy":
+        print(json.dumps(outbound_policy_command(router, args.workspace_id, args.spec), indent=1))
         return 0
     if args.command == "bootstrap":
         ws, plaintext = router.bootstrap(

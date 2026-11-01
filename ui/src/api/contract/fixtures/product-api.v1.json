@@ -106,7 +106,10 @@
     "unsafe_original_export": 409,
     "upload_deleted": 410,
     "dataset_source_deleted": 410,
-    "audit_unavailable": 503
+    "audit_unavailable": 503,
+    "outbound_data_blocked": 422,
+    "feedback_not_sealed": 409,
+    "feedback_in_use": 409
   },
   "exchanges": {
     "create_project": {

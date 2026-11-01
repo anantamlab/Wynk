@@ -297,6 +297,10 @@ ERROR_STATUS: dict[str, int] = {
     "upload_deleted": 410,
     "dataset_source_deleted": 410,
     "audit_unavailable": 503,
+    # -- Phase 5 privacy, retention and outbound data --
+    "outbound_data_blocked": 422,
+    "feedback_not_sealed": 409,
+    "feedback_in_use": 409,
 }
 
 
@@ -417,6 +421,14 @@ def _invocation(target: str, body: InvokeWorkflow) -> dict[str, Any]:
 
 def _invoked(view: BaseModel, replayed: bool) -> ApiResponse:
     return ApiResponse(200, view.model_dump(mode="json"), headers=REPLAYED if replayed else ())
+
+
+class EraseFeedback(_Strict):
+    """Phase 5 erasure. ``accept_residual_copies``: erase even though copies exist that erasure
+    cannot reach (a challenger dataset version / job, a keyed invocation's output) - an explicit
+    decision, recorded, and the result says ``fully_erased: false``."""
+
+    accept_residual_copies: bool = False
 
 
 class EvaluateTrigger(_Strict):
@@ -576,6 +588,7 @@ _ROUTES: list[tuple[str, re.Pattern[str], str]] = [
     ("GET", re.compile(rf"^inferences/{_INFERENCE}$"), "get_inference"),
     ("POST", re.compile(rf"^inferences/{_INFERENCE}/feedback$"), "submit_feedback"),
     ("GET", re.compile(rf"^feedback/{_FEEDBACK}$"), "get_feedback"),
+    ("POST", re.compile(rf"^feedback/{_FEEDBACK}/erase$"), "erase_feedback"),
     ("POST", re.compile(r"^monitoring/policies$"), "register_policy"),
     ("GET", re.compile(rf"^monitoring/policies/{_POLICY}$"), "get_policy"),
     ("GET", re.compile(rf"^workflows/{_WORKFLOW}/monitoring$"), "get_monitoring"),
@@ -605,6 +618,7 @@ AUDITED: dict[str, tuple[str, str, bool]] = {
     "delete_upload": ("dataset.delete", "upload", True),
     "delete_dataset": ("dataset.delete", "dataset", True),
     "list_audit": ("audit.read", "audit", False),
+    "erase_feedback": ("feedback.erase", "feedback", True),
 }
 REFUSED_ACCESS = frozenset(
     {
@@ -645,7 +659,7 @@ def _audit_details(name: str, res: ApiResponse) -> dict[str, str | int | bool | 
         details = b.get("error", {}).get("details", {})
         return {
             k: details[k]
-            for k in ("category", "categories", "policy_version", "scope")
+            for k in ("category", "categories", "policy_version", "scope", "reason", "copies")
             if isinstance(details.get(k), str)
         }
     if name == "upload":
@@ -687,6 +701,14 @@ def _audit_details(name: str, res: ApiResponse) -> dict[str, str | int | bool | 
             "content_shared_with": b["content_shared_with"],
             "affected_versions": len(b["deletion"]["affected_versions"]),
             "reason": b["deletion"]["reason"],
+        }
+    if name == "erase_feedback":
+        return {
+            "created": b["created"],
+            "reason": b["reason"],
+            "fully_erased": b["fully_erased"],
+            "residual_copies": len(b["residual_copies"]),
+            "payload_sha256": b["payload_sha256"],
         }
     if name == "delete_dataset":
         return {
@@ -734,6 +756,23 @@ class ProductAPI:
         if spec is None or route is None:
             res = self._handle(method, target, headers, rfile, principal)
             code = res.body.get("error", {}).get("code") if res.status >= 400 else None
+            if route is not None and code == "outbound_data_blocked":
+                # F2: a refused outbound request is recorded with categories and fields only
+                details = res.body["error"].get("details", {})
+                self.record(
+                    principal,
+                    "security.outbound_blocked",
+                    "resource",
+                    route[1][0] if route[1] else None,
+                    "refused",
+                    code,
+                    {"route": route[0]}
+                    | {
+                        k: details[k]
+                        for k in ("categories", "fields", "policy_version", "policy_hash")
+                        if isinstance(details.get(k), str)
+                    },
+                )
             if route is not None and route[1] and code in REFUSED_ACCESS:
                 # a foreign (other workspace) id is indistinguishable from a missing one, so
                 # every refused dataset access is recorded: best effort, it is a refusal anyway
@@ -1268,6 +1307,17 @@ class ProductAPI:
     def _get_feedback(self, request: _Request, args: tuple[str, ...]) -> ApiResponse:
         self._params(request, set())
         return _ok(self._monitor().feedback(args[0]))
+
+    def _erase_feedback(self, request: _Request, args: tuple[str, ...]) -> ApiResponse:
+        self._params(request, set())
+        body: EraseFeedback = self._json(request, EraseFeedback)
+        view = self._monitor().erase_feedback(
+            args[0],
+            reason="request",
+            actor=request.principal,
+            accept_residual_copies=body.accept_residual_copies,
+        )
+        return _ok(view, created=view.created)
 
     def _register_policy(self, request: _Request, _: tuple[str, ...]) -> ApiResponse:
         self._params(request, set())

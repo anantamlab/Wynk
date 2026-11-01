@@ -90,6 +90,13 @@ from experiments.promotion import (
     compatibility_identity,
     lineage_identity,
 )
+from ingestion.outbound import (
+    REFUSAL_MESSAGE,
+    OutboundPolicy,
+    blocked,
+    refusal_details,
+    screen_values,
+)
 from runtime.model_client import GenerationRequest, GenerationResponse, ModelClient
 from runtime.sources import WebSearchRequest, WebSearchResponse, WebSearchSource, pin_websearch
 from store.crypto import BlobCipher, DecryptionError, NotEncrypted, UnknownKey
@@ -223,6 +230,14 @@ class InferenceOutputUnavailable(DeploymentError):
     the stored envelope fails authentication). Fails closed: nothing is re-run or guessed."""
 
     code = "storage_error"
+
+
+class OutboundDataBlocked(DeploymentError):
+    """The workspace's outbound policy (``ingestion.outbound``) refuses to send these inputs to
+    a model provider. Raised before any model or search request is bound or sent, and before an
+    Idempotency-Key is bound; the details name categories and fields, never a value."""
+
+    code = "outbound_data_blocked"
 
 
 # -- views --------------------------------------------------------------------------------------
@@ -819,6 +834,9 @@ class ChampionDeployments:
     # seals a keyed invocation's output for its retries (#33 keyring, this workspace's key);
     # without one, an Idempotency-Key invocation is refused before anything is bound
     outputs: BlobCipher | None = None
+    # F2: the workspace's CURRENT outbound policy, read on every invocation (a change applies to
+    # the next request). ``None``: nothing is screened (an in-process tool / test).
+    outbound: Callable[[], OutboundPolicy] | None = None
 
     # -- publish ----------------------------------------------------------------------------
     def publish(self, champion_id: str, actor: str = "api") -> tuple[WorkflowVersionView, bool]:
@@ -1011,6 +1029,17 @@ class ChampionDeployments:
         except InvalidTransition as exc:
             raise InvalidDeploymentTransition(str(exc)) from None
 
+    def check_outbound(self, values: Mapping[str, Any], *, prefix: str = "") -> None:
+        """Refuse (``outbound_data_blocked``) values the workspace's outbound policy does not
+        send to a model provider. Never rewrites them; the error names no value."""
+        if self.outbound is None:
+            return
+        policy = self.outbound()
+        found = blocked(screen_values(values, policy, prefix=prefix))
+        if found:
+            details = refusal_details(found, policy)
+            raise OutboundDataBlocked(REFUSAL_MESSAGE.format(**details), **details)
+
     def _runtime(self) -> InferenceRuntime:
         if self.runtime is None:
             raise InferenceBackendUnavailable("this process has no model runtime to serve with")
@@ -1155,6 +1184,7 @@ class ChampionDeployments:
                 "PRODUCTION version serves inference",
                 state=row.state.value,
             )
+        self.check_outbound(values)  # F2: before anything is bound, sent or keyed
         if idempotency is None:
             bound_version = bind_version(document, self._runtime())
             inference_id = self.ids()

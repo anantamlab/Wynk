@@ -82,6 +82,19 @@ SCHEMA = (
         owner_user_id TEXT NOT NULL REFERENCES users(user_id),
         started_at    TEXT NOT NULL,
         completed_at  TEXT)""",
+    # F2 outbound data policy: an append-only revision history per workspace; the highest
+    # revision is in force. A workspace without a revision predates the policy (``off``).
+    """CREATE TABLE IF NOT EXISTS outbound_policies (
+        workspace_id TEXT NOT NULL REFERENCES workspaces(workspace_id),
+        revision     INTEGER NOT NULL CHECK (revision >= 1),
+        policy_json  TEXT NOT NULL,
+        set_by       TEXT NOT NULL,
+        set_at       TEXT NOT NULL,
+        PRIMARY KEY (workspace_id, revision))""",
+    "CREATE TRIGGER IF NOT EXISTS outbound_policies_immutable BEFORE UPDATE ON outbound_policies "
+    "BEGIN SELECT RAISE(ABORT, 'outbound policy revisions are append-only'); END",
+    "CREATE TRIGGER IF NOT EXISTS outbound_policies_no_delete BEFORE DELETE ON outbound_policies "
+    "BEGIN SELECT RAISE(ABORT, 'outbound policy revisions are append-only'); END",
     # -- immutability ---------------------------------------------------------------------
     "CREATE TRIGGER IF NOT EXISTS users_immutable BEFORE UPDATE ON users "
     "BEGIN SELECT RAISE(ABORT, 'users are immutable'); END",
@@ -439,6 +452,33 @@ class SQLiteIdentityStore:
                 (self.clock(), source),
             )
         )
+
+    # -- outbound data policy (F2) ----------------------------------------------------------
+    @staticmethod
+    def insert_outbound_policy(
+        c: sqlite3.Connection, workspace_id: str, policy_json: str, set_by: str, set_at: str
+    ) -> int:
+        """Append the next revision (inside the caller's transaction); returns its number."""
+        (top,) = c.execute(
+            "SELECT COALESCE(MAX(revision), 0) FROM outbound_policies WHERE workspace_id=?",
+            (workspace_id,),
+        ).fetchone()
+        c.execute(
+            "INSERT INTO outbound_policies(workspace_id, revision, policy_json, set_by, set_at) "
+            "VALUES (?,?,?,?,?)",
+            (workspace_id, top + 1, policy_json, set_by, set_at),
+        )
+        return int(top) + 1
+
+    def outbound_policy(self, workspace_id: str) -> tuple[int, str, str, str] | None:
+        """``(revision, policy_json, set_by, set_at)`` in force; ``None``: never set."""
+        with self._connect() as conn:
+            r = conn.execute(
+                "SELECT revision, policy_json, set_by, set_at FROM outbound_policies "
+                "WHERE workspace_id=? ORDER BY revision DESC LIMIT 1",
+                (workspace_id,),
+            ).fetchone()
+        return (int(r[0]), r[1], r[2], r[3]) if r else None
 
 
 def _member(r: tuple[Any, ...]) -> MembershipRow:
