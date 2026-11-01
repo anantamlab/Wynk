@@ -25,6 +25,7 @@ from api.tenancy import TenantRouter
 from core.models import ModelCapability, ModelEntry, ModelPricing, ModelRegistry
 from runtime.backends.brave_search import BraveWebSearchSource, websearch_from_env
 from runtime.backends.openai_compatible import ADAPTER, openai_compatible_model_hash
+from runtime.prompts import PROMPT_TEMPLATE_VERSION
 
 FIXTURE = Path(__file__).parent / "fixtures" / "dogfood" / "order_desk.csv"
 DATASET_ID = "order-desk"
@@ -46,6 +47,61 @@ REGISTER = {
 SPLIT_PLAN = {"seed": 11, "validation_bps": 2000, "test_bps": 2000}
 INSTRUCTIONS = "Name the destination city of the order, using only the order record."
 SHIPS_TO = re.compile(r"ships to ([A-Z][a-z]+)")
+
+# What a user sends production: an order the fixture never contained.
+NEW_ORDER = {
+    "question": "Which city does order ORD-2001 ship to?",
+    "order_record": "Order ORD-2001 (1 x tarp) was packed at the Reno warehouse and ships to "
+    "Lincoln by Ground on 2026-04-01.",
+}
+
+
+# -- what a user writes ----------------------------------------------------------------------
+def contract_for(spec: dict[str, Any], **overrides: Any) -> dict[str, Any]:
+    """The TaskContract a user writes for the registered dataset version."""
+    return {
+        "task_id": TASK_ID,
+        "contract_version": 1,
+        "task_type": "question_answering",
+        "instructions": INSTRUCTIONS,
+        "input_schema": {
+            "fields": [
+                {"name": "question", "type": "string"},
+                {"name": "order_record", "type": "string"},
+            ]
+        },
+        "output_schema": {"fields": [{"name": "answer", "type": "string"}]},
+        "dataset": spec,
+        "evaluation": {"evaluator": "exact_match", "config": {"case_sensitive": False}},
+        "constraints": {
+            "maximum_tokens_per_example": 20_000,
+            "maximum_wall_time_s": 120.0,
+            "maximum_tool_calls": 20,
+            "maximum_retries": 2,
+            "maximum_model_calls": 4,
+        },
+        **overrides,
+    }
+
+
+def plan_for(entry: Any, strategies=("fixed", "random", "aco")) -> dict[str, Any]:
+    return {
+        "model": {"provider": entry.provider, "model": entry.model_id},
+        "expected_model_hash": entry.model_hash,
+        "expected_prompt_version": PROMPT_TEMPLATE_VERSION,
+        "budget": {"max_candidate_evaluations": 4},
+        "seeds": [0],
+        "strategies": list(strategies),
+    }
+
+
+def rows_of(role: str, splits: dict[str, Any]) -> list[str]:
+    return [s for x in splits["splits"]["splits"] if x["role"] == role for s in x["row_ids"]]
+
+
+def order_ids(row_ids: list[str]) -> set[str]:
+    """Order ids of fixture rows (T-0007 -> ORD-1007): how a prompt names its row."""
+    return {f"ORD-1{r[-3:]}" for r in row_ids}
 
 
 # -- the fake far end of the model connection -----------------------------------------------
