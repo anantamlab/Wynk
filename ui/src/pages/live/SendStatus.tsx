@@ -26,8 +26,8 @@ export function SendStatus<T>({
   block?: Block;
 }) {
   if (state.phase === "idle") return null;
-  const status = <Status state={state} noun={noun} onRetry={onRetry} onNewKey={onNewKey} />;
-  if (block !== "other_pending") return status;
+  const status = state.phase === "not_sent" ? <NotSent state={state} noun={noun} onNewKey={onNewKey} /> : <Status state={state} noun={noun} onRetry={onRetry} onNewKey={onNewKey} />;
+  if (block !== "other_pending" || state.phase === "not_sent") return status;
   return (
     <div className="space-y-2">
       {status}
@@ -39,7 +39,71 @@ export function SendStatus<T>({
   );
 }
 
-function Status<T>({ state, noun, onRetry, onNewKey }: { state: Exclude<SendState<T>, { phase: "idle" }>; noun: string; onRetry: () => void; onNewKey: () => void }) {
+type NotSentState = Extract<SendState<unknown>, { phase: "not_sent" }>;
+
+/** what to do when the recovery record cannot be kept; `true`: a deliberate new request is offered */
+const NOT_SENT: Record<NotSentState["reason"], { title: string; text: (noun: string) => string; newKey: boolean }> = {
+  workspace_unavailable: {
+    title: "Not sent: the workspace could not be confirmed",
+    text: (noun) =>
+      `Wynk reads the workspace (GET /workspace) before every ${noun}, to keep its Idempotency-Key for recovery after a reload. That read failed, so nothing was sent. Check the connection and that the UI server's API key is valid for this workspace, then submit again.`,
+    newKey: false,
+  },
+  storage_unavailable: {
+    title: "Not sent: this tab cannot keep a recovery record",
+    text: (noun) =>
+      `Session storage is blocked or missing in this browser tab. Wynk keeps the Idempotency-Key there, so that a lost answer and a reload cannot run the ${noun} twice. Without it, nothing was sent. Allow site data for this site (or leave private mode), reload the page and submit again.`,
+    newKey: false,
+  },
+  storage_write_failed: {
+    title: "Not sent: the recovery record could not be stored",
+    text: () =>
+      "The browser refused to store the Idempotency-Key (storage full or denied), so nothing was sent. Free site data for this site or allow it, reload the page and submit again.",
+    newKey: false,
+  },
+  storage_verify_failed: {
+    title: "Not sent: the recovery record did not read back",
+    text: () =>
+      "The Idempotency-Key was stored but did not read back the same, so Wynk cannot rely on it after a reload. Nothing was sent. Reload the page and submit again; if it continues, allow site data or use another browser.",
+    newKey: false,
+  },
+  storage_corrupted: {
+    title: "Not sent: the stored recovery record is damaged",
+    text: (noun) =>
+      `The record of an earlier, unconfirmed ${noun} is damaged, so its Idempotency-Key cannot be recovered. That ${noun} may already have run. Check it first. A new request uses a new key and may run, and spend, a second time.`,
+    newKey: true,
+  },
+  workspace_changed: {
+    title: "Not sent: the workspace changed",
+    text: (noun) =>
+      `The UI server's API key now belongs to another workspace than the unconfirmed ${noun}. Its Idempotency-Key means nothing there, so Wynk did not retry it. Restore the original API key to recover it. A new request in this workspace uses a new key and may run the ${noun} a second time.`,
+    newKey: true,
+  },
+};
+
+function NotSent({ state, noun, onNewKey }: { state: NotSentState; noun: string; onNewKey: () => void }) {
+  const advice = NOT_SENT[state.reason];
+  return (
+    <div role="alert" data-testid="send-status" data-phase="not_sent" data-reason={state.reason} className="flex items-start gap-3 rounded-[10px] border border-bad/50 bg-bad-wash px-4 py-3 text-sm">
+      <Warning size={18} weight="fill" className="mt-0.5 shrink-0 text-bad" aria-hidden="true" />
+      <div className="min-w-0 flex-1 space-y-1">
+        <p className="font-semibold">{advice.title}</p>
+        <p className="text-ink-soft">{advice.text(noun)}</p>
+        <p className="font-mono text-[11px] text-ink-soft">
+          <span data-testid="error-code">{state.reason}</span>
+          {state.detail ? ` · ${state.detail}` : ""}
+        </p>
+        {advice.newKey ? (
+          <button type="button" className="btn btn-quiet btn-sm mt-2" onClick={onNewKey}>
+            Send as a new request (new key; may run twice)
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function Status<T>({ state, noun, onRetry, onNewKey }: { state: Exclude<SendState<T>, { phase: "idle" } | { phase: "not_sent" }>; noun: string; onRetry: () => void; onNewKey: () => void }) {
   const key = <KeyLine value={state.key} />;
   if (state.phase === "recovered")
     return state.outcome === "ambiguous" ? (

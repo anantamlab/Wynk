@@ -271,6 +271,61 @@ async function dropFirstResponse(page: Page, pattern: string) {
   return keys;
 }
 
+/** Every POST the browser sends to a matching path, whether a route answers it or the server does. */
+function posts(page: Page, path: (pathname: string) => boolean) {
+  const seen: string[] = [];
+  page.on("request", (r) => {
+    if (r.method() === "POST" && path(new URL(r.url()).pathname)) seen.push(r.url());
+  });
+  return seen;
+}
+
+/** `GET /api/v1/workspace` only (not `/workspace/keys`) */
+const isWorkspace = (url: URL) => url.pathname === "/api/v1/workspace";
+const refuseWorkspace = (status: number, code: string) => (page: Page) =>
+  page.route(isWorkspace, (route) => route.fulfill({ status, json: { error: { code, message: `${code} (e2e)`, details: {} } } }));
+
+/** ways the tab can lose its durable recovery record; each must send zero mutation requests */
+const NO_RECOVERY: { name: string; reason: string; detail?: string; inject: (page: Page) => Promise<unknown> }[] = [
+  {
+    name: "sessionStorage access is denied",
+    reason: "storage_unavailable",
+    detail: "SecurityError",
+    inject: (page) =>
+      page.addInitScript(() =>
+        Object.defineProperty(window, "sessionStorage", {
+          configurable: true,
+          get() {
+            throw new DOMException("denied (e2e)", "SecurityError");
+          },
+        }),
+      ),
+  },
+  ...["QuotaExceededError", "SecurityError"].map((name) => ({
+    name: `setItem() throws ${name}`,
+    reason: "storage_write_failed",
+    detail: name,
+    inject: (page: Page) =>
+      page.addInitScript((n) => {
+        Storage.prototype.setItem = function () {
+          throw new DOMException("refused (e2e)", n);
+        };
+      }, name),
+  })),
+  {
+    name: "a write that does not read back",
+    reason: "storage_verify_failed",
+    inject: (page) =>
+      page.addInitScript(() => {
+        Storage.prototype.setItem = function () {}; // accepted, never kept
+      }),
+  },
+  { name: "GET /workspace answers 401", reason: "workspace_unavailable", detail: "unauthenticated", inject: refuseWorkspace(401, "unauthenticated") },
+  { name: "GET /workspace answers 403", reason: "workspace_unavailable", detail: "forbidden", inject: refuseWorkspace(403, "forbidden") },
+  { name: "GET /workspace answers 500", reason: "workspace_unavailable", detail: "internal_error", inject: refuseWorkspace(500, "internal_error") },
+  { name: "GET /workspace fails on the network", reason: "workspace_unavailable", detail: "network_error", inject: (page) => page.route(isWorkspace, (route) => route.abort("connectionreset")) },
+];
+
 test("live: experiment → results → promotion → publish → stage → production → inference, idempotent end to end", async ({ page, request }) => {
   test.setTimeout(240_000);
   const mockCode = watchForMockCode(page);
@@ -346,13 +401,39 @@ test("live: experiment → results → promotion → publish → stage → produ
   // Inference: the server runs it, the answer is lost, and the page reloads before any retry
   // succeeds. The same values go out again with the SAME key, and the server answers with the
   // original output; nothing runs twice.
-  const invokeDrop = await dropAnswers(page, `**/api/v1/deployments/${lineage}/invoke`);
   const invoke = panel.getByTestId("invoke-panel");
   const fillOrder = async () => {
     for (const [name, value] of Object.entries(NEW_ORDER)) await invoke.getByRole("textbox", { name: new RegExp(`^${name}`) }).fill(value);
   };
+  const runButton = invoke.getByRole("button", { name: /^Run on production/ });
+
+  // No durable recovery record, no invocation: storage that refuses the record, then a workspace
+  // that cannot be read. Zero POST /invoke leave the browser in both cases.
+  const invokePosts = posts(page, (path) => path.endsWith(`/deployments/${lineage}/invoke`));
   await fillOrder();
-  await invoke.getByRole("button", { name: /^Run on production/ }).click();
+  await page.evaluate(() => {
+    const w = window as unknown as { realSetItem?: Storage["setItem"] };
+    w.realSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function () {
+      throw new DOMException("full (e2e)", "QuotaExceededError");
+    };
+  });
+  await runButton.click();
+  await expect(invoke.getByTestId("send-status")).toHaveAttribute("data-reason", "storage_write_failed");
+  await expect(invoke.getByTestId("send-status")).toContainText("nothing was sent");
+  await page.evaluate(() => {
+    Storage.prototype.setItem = (window as unknown as { realSetItem: Storage["setItem"] }).realSetItem;
+  });
+  await refuseWorkspace(500, "internal_error")(page);
+  await runButton.click();
+  await expect(invoke.getByTestId("send-status")).toHaveAttribute("data-reason", "workspace_unavailable");
+  await page.unroute(isWorkspace);
+  await page.waitForTimeout(1_000); // longer than a first retry backoff: nothing goes out late
+  expect(invokePosts).toEqual([]);
+  expect(await pendingRecords(page)).toEqual([]);
+
+  const invokeDrop = await dropAnswers(page, `**/api/v1/deployments/${lineage}/invoke`);
+  await runButton.click();
   await expect.poll(() => invokeDrop.handled, { timeout: 30_000 }).toBeGreaterThanOrEqual(1);
   const firstKey = invokeDrop.keys[0];
   const records = await pendingRecords(page);
@@ -422,6 +503,24 @@ test("live: a lost create answer and a reload: the same values recover the same 
   expect((await api(request, "POST", `experiments/${jobId}/cancel`)).status).toBe(200); // the slow model need not finish
   expect(mockCode).toEqual([]);
 });
+
+for (const failure of NO_RECOVERY) {
+  test(`live: ${failure.name}: zero experiments are created, and the person is told why`, async ({ page, request }) => {
+    const { pid, datasetId } = await orderDesk(request);
+    const creates = posts(page, (path) => path === "/api/v1/experiments");
+    await failure.inject(page);
+    await (await configure(page, request, pid, datasetId, "e2e-desk", "closed")).click();
+    const status = page.getByTestId("send-status");
+    await expect(status).toHaveAttribute("data-phase", "not_sent");
+    await expect(status).toHaveAttribute("data-reason", failure.reason);
+    if (failure.detail) await expect(status).toContainText(`${failure.reason} · ${failure.detail}`);
+    await expect(page.getByRole("button", { name: "Create experiment" })).toBeEnabled(); // the person can fix it and submit again
+    await page.waitForTimeout(1_000); // longer than a first retry backoff: nothing goes out late
+    expect(creates).toEqual([]); // not one request left the browser…
+    const jobs = (await api(request, "GET", "experiments")).body.jobs.filter((j: { dataset_id: string }) => j.dataset_id === datasetId);
+    expect(jobs).toEqual([]); // …and the server has no experiment for it
+  });
+}
 
 test("live: a revoked key ends the live view: the cached experiment is removed and polling stops", async ({ page, request }) => {
   test.setTimeout(120_000);
