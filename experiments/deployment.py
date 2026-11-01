@@ -24,6 +24,15 @@ production -> inference -> rollback.
       genome through compiler -> ``WorkflowRunner`` -> ``ModelClient`` -> check the run is the
       pinned one -> validate the answer against the pinned output schema -> record.
 
+    invoke_once / invoke_production_once(..., idempotency)       an ``Idempotency-Key``
+      the same, but the key is bound (``store.deployments.inference_invocations``) to ONE
+      invocation and the version + revision resolved now, RESERVED before any provider request;
+      the first model / websearch request waits for RESERVED -> STARTED (``_FirstRequestGate``);
+      the outcome (a SUCCEEDED output sealed under the workspace data key) and the terminal
+      state commit together. A retry gets that invocation's state
+      (``_replayed``) and never sends a request for it again: a dead owner's RESERVED invocation
+      is resumed on its version (it sent nothing), a dead owner's STARTED one is AMBIGUOUS.
+
 Inference never runs an optimizer, an evaluator or a promotion: the champion was chosen
 and judged before it was published, and the version holds only what execution needs. Which
 optimizer found the genome (fixed, random or ACO) is provenance, never behaviour.
@@ -35,8 +44,10 @@ import hashlib
 import json
 import re
 import secrets
+import threading
 import time
 from collections.abc import Callable, Mapping
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -60,7 +71,14 @@ from core.stages import GatherSource, StageKind
 from core.task_contract import ContractError, TaskContract, workflow_grammar
 from core.violations import ViolationCode
 from evaluation.schema import validate_answer
-from experiments.jobs import ExperimentJobDefinition, JobError, load_canonical
+from experiments.jobs import (
+    ExperimentJobDefinition,
+    IdempotencyConflict,
+    JobError,
+    Lease,
+    _Heartbeat,
+    load_canonical,
+)
 from experiments.promotion import (
     CHAMPION_SCHEMA,
     LEGACY_CHAMPION_SCHEMA,
@@ -72,17 +90,23 @@ from experiments.promotion import (
     compatibility_identity,
     lineage_identity,
 )
-from runtime.model_client import ModelClient
-from runtime.sources import WebSearchSource, pin_websearch
+from runtime.model_client import GenerationRequest, GenerationResponse, ModelClient
+from runtime.sources import WebSearchRequest, WebSearchResponse, WebSearchSource, pin_websearch
+from store.crypto import BlobCipher, DecryptionError, NotEncrypted, UnknownKey
 from store.deployments import (
+    FINISHED,
     DeploymentRow,
     EventRow,
+    InferenceRow,
     InvalidTransition,
+    InvocationRow,
+    InvocationState,
     SQLiteDeploymentStore,
     StaleDeployment,
     VersionRow,
     VersionState,
 )
+from store.jobs import IdempotencyClaim, LeaseLost
 
 WORKFLOW_VERSION_SCHEMA = "wynk-workflow-version/1"
 INFERENCE_SCHEMA = "wynk-inference/1"
@@ -94,6 +118,9 @@ DEPLOYABLE = frozenset({VersionState.STAGING, VersionState.PRODUCTION})
 # -- errors -------------------------------------------------------------------------------------
 class DeploymentError(Exception):
     code = "deployment_error"
+    # set on an error raised for a request whose Idempotency-Key was already bound (the API
+    # answers it with ``Idempotent-Replayed: true``): this request created no invocation
+    replayed = False
 
     def __init__(self, message: str, **details: str | int | None) -> None:
         super().__init__(message)
@@ -169,6 +196,33 @@ class VersionIntegrityError(DeploymentError):
     """A stored workflow version does not verify against its own content address."""
 
     code = "workflow_version_integrity_error"
+
+
+class InferenceInProgress(DeploymentError):
+    """The key's invocation is still running in some process: nothing was started again."""
+
+    code = "inference_in_progress"
+
+
+class InferenceAmbiguousAttempt(DeploymentError):
+    """The key's invocation may have reached the provider, but its process died before the
+    outcome was stored. It is never re-sent automatically: a new key runs a new invocation."""
+
+    code = "inference_ambiguous_attempt"
+
+
+class InferenceDeploymentChanged(DeploymentError):
+    """The key's invocation never ran, and the version it is bound to no longer serves the
+    address it was resolved for. It is never moved to another version."""
+
+    code = "inference_deployment_changed"
+
+
+class InferenceOutputUnavailable(DeploymentError):
+    """A SUCCEEDED keyed invocation's sealed output cannot be opened (a key rotated away, or
+    the stored envelope fails authentication). Fails closed: nothing is re-run or guessed."""
+
+    code = "storage_error"
 
 
 # -- views --------------------------------------------------------------------------------------
@@ -265,6 +319,75 @@ class InferenceRuntime:
     client: Callable[[ModelEntry], ModelClient]
     clock: Callable[[], float] = time.perf_counter
     websearch: WebSearchSource | None = None
+
+
+class _ReservationLost(Exception):
+    """Another process took this invocation's reservation over: send nothing."""
+
+
+class _FirstRequestGate:
+    """Commits an idempotent invocation RESERVED -> STARTED once, immediately before its first
+    model or websearch request leaves the process. Until it fires the invocation provably sent
+    nothing; if the commit is refused (the reservation was taken over) no request is sent."""
+
+    def __init__(self, start: Callable[[], bool]) -> None:
+        self._start = start
+        self._lock = threading.Lock()
+        self.started = False
+        self.lost = False
+
+    def __call__(self) -> None:
+        with self._lock:
+            if self.started:
+                return
+            if self.lost or not self._start():
+                self.lost = True
+                raise _ReservationLost("this invocation's reservation was taken over")
+            self.started = True
+
+
+class _GatedModel:
+    """A ``ModelClient`` that passes ``gate`` before every request (identity: the inner one)."""
+
+    def __init__(self, inner: ModelClient, gate: _FirstRequestGate) -> None:
+        self._inner, self._gate = inner, gate
+
+    def __getattr__(self, name: str) -> Any:  # model_hash, entry, cacheable, ...
+        return getattr(self._inner, name)
+
+    async def generate(self, request: GenerationRequest) -> GenerationResponse:
+        self._gate()
+        return await self._inner.generate(request)
+
+
+class _GatedSearch:
+    """A ``WebSearchSource`` that passes ``gate`` before every search (identity: the inner one)."""
+
+    def __init__(self, inner: WebSearchSource, gate: _FirstRequestGate) -> None:
+        self._inner, self._gate = inner, gate
+
+    @property
+    def identity(self) -> str:
+        return self._inner.identity
+
+    @property
+    def max_results(self) -> int:
+        return self._inner.max_results
+
+    def search(self, request: WebSearchRequest) -> WebSearchResponse:
+        self._gate()
+        return self._inner.search(request)
+
+
+@dataclass(frozen=True)
+class _InvocationLeases:
+    """The ``store`` a #24 ``_Heartbeat`` renews for an invocation (claim: inference id, owner)."""
+
+    store: SQLiteDeploymentStore
+
+    def renew(self, claim: tuple[str, str], now_s: float, lease_s: float) -> None:
+        if not self.store.renew_invocation(claim[0], claim[1], now_s + lease_s):
+            raise LeaseLost(f"invocation {claim[0]} is no longer owned by this process")
 
 
 @dataclass(frozen=True)
@@ -537,12 +660,17 @@ def check_document(row: VersionRow) -> dict[str, Any]:
 
 
 # -- binding: the pinned model and runtime, exactly, or nothing ---------------------------------
-def bind_version(document: Mapping[str, Any], runtime: InferenceRuntime) -> BoundVersion:
+def bind_version(
+    document: Mapping[str, Any],
+    runtime: InferenceRuntime,
+    gate: _FirstRequestGate | None = None,
+) -> BoundVersion:
     """Bind ``document`` to this process: the registry entry it pinned (present, enabled,
     byte-identical), a ``ModelClient`` reporting exactly the pinned ``model_hash``, a
     ``WorkflowRunner`` whose model / prompt / compiler / grammar / benchmark versions equal the
     pinned ones, and a genome the runtime admits. Any difference raises ``ModelBindingFailed``
-    before a model or search request; another model or evidence provider is never substituted."""
+    before a model or search request; another model or evidence provider is never substituted.
+    Binding sends nothing. ``gate``: passed before every model and websearch request."""
     from runtime.runner import WorkflowRunner
 
     pinned = document["model"]
@@ -557,8 +685,11 @@ def bind_version(document: Mapping[str, Any], runtime: InferenceRuntime) -> Boun
     if is_websearch_identity(evidence_source):
         if runtime.websearch is None:
             raise fail("websearch_unavailable", "the pinned websearch provider is not configured")
+        source: WebSearchSource = runtime.websearch
+        if gate is not None:
+            source = _GatedSearch(source, gate)
         try:
-            websearch = pin_websearch(runtime.websearch)
+            websearch = pin_websearch(source)
         except ValueError as exc:
             raise fail(
                 "websearch_identity_mismatch", f"invalid websearch provider: {exc}"
@@ -599,6 +730,8 @@ def bind_version(document: Mapping[str, Any], runtime: InferenceRuntime) -> Boun
             "model_hash_mismatch",
             f"client reports model_hash {client.model_hash!r}, the version pins {model_hash!r}",
         )
+    if gate is not None:
+        client = _GatedModel(client, gate)  # type: ignore[assignment]
     contract = TaskContract.model_validate(document["contract"]["task_contract"])
     genome = Genome.from_canonical(document["workflow"]["genome"])
     if (
@@ -678,6 +811,14 @@ class ChampionDeployments:
     promotions: ChampionPromotions
     runtime: InferenceRuntime | None = None
     ids: Callable[[], str] = field(default=lambda: "inf-" + secrets.token_hex(12))
+    # Idempotency-Key invocations: the owner's lease (renewed every lease_s / 3 while it runs)
+    # on the wall clock every process shares. An expired lease means the owner died.
+    lease_s: float = 30.0
+    lease_clock: Callable[[], float] = time.time
+    heartbeat: bool = True
+    # seals a keyed invocation's output for its retries (#33 keyring, this workspace's key);
+    # without one, an Idempotency-Key invocation is refused before anything is bound
+    outputs: BlobCipher | None = None
 
     # -- publish ----------------------------------------------------------------------------
     def publish(self, champion_id: str, actor: str = "api") -> tuple[WorkflowVersionView, bool]:
@@ -886,8 +1027,7 @@ class ChampionDeployments:
         principal: Mapping[str, Any] | None = None,
     ) -> InferenceView:
         """Run exactly ``version_id`` (STAGING or PRODUCTION)."""
-        row = self._row(version_id)
-        return self._invoke(row, inputs, addressed_by="version", revision=None, principal=principal)
+        return self.invoke_once(version_id, inputs, principal)[0]
 
     def invoke_production(
         self,
@@ -896,12 +1036,57 @@ class ChampionDeployments:
         principal: Mapping[str, Any] | None = None,
     ) -> InferenceView:
         """Run the lineage's current production version; the response names which one."""
+        return self.invoke_production_once(lineage_id, inputs, principal)[0]
+
+    def invoke_once(
+        self,
+        version_id: str,
+        inputs: Mapping[str, Any],
+        principal: Mapping[str, Any] | None = None,
+        idempotency: IdempotencyClaim | None = None,
+    ) -> tuple[InferenceView, bool]:
+        """``invoke``; with ``idempotency``, at most one invocation per key (``_replayed``).
+        Returns ``(inference, replayed)``."""
+        if idempotency is not None:
+            self._sealer()
+            replayed = self._replay(idempotency, inputs, principal)
+            if replayed is not None:
+                return replayed, True
+        row = self._row(version_id)
+        return self._invoke(
+            row,
+            inputs,
+            addressed_by="version",
+            revision=None,
+            principal=principal,
+            idempotency=idempotency,
+        )
+
+    def invoke_production_once(
+        self,
+        lineage_id: str,
+        inputs: Mapping[str, Any],
+        principal: Mapping[str, Any] | None = None,
+        idempotency: IdempotencyClaim | None = None,
+    ) -> tuple[InferenceView, bool]:
+        """``invoke_production``; with ``idempotency`` the key binds the production version (and
+        revision) it resolves NOW, so a retry never runs a version promoted later."""
+        if idempotency is not None:
+            self._sealer()
+            replayed = self._replay(idempotency, inputs, principal)
+            if replayed is not None:
+                return replayed, True
         d = self._deployment(lineage_id)
         if d.production_version_id is None:
             raise NoProductionVersion(f"lineage {lineage_id} has no production version")
         row = self._row(d.production_version_id)
         return self._invoke(
-            row, inputs, addressed_by="production", revision=d.revision, principal=principal
+            row,
+            inputs,
+            addressed_by="production",
+            revision=d.revision,
+            principal=principal,
+            idempotency=idempotency,
         )
 
     def inference(self, inference_id: str) -> InferenceView:
@@ -920,7 +1105,8 @@ class ChampionDeployments:
         addressed_by: str,
         revision: int | None,
         principal: Mapping[str, Any] | None = None,
-    ) -> InferenceView:
+        idempotency: IdempotencyClaim | None = None,
+    ) -> tuple[InferenceView, bool]:
         document = check_document(row)
         contract = TaskContract.model_validate(document["contract"]["task_contract"])
         try:
@@ -938,9 +1124,28 @@ class ChampionDeployments:
                     inputs=inputs,
                 )
                 record["authenticated_principal"] = _principal(principal)
-                self.store.record_inference(
-                    inference_id, row.version_id, row.lineage_id, "FAILED", canonical_json(record)
-                )
+                if idempotency is None:
+                    self.store.record_inference(
+                        inference_id,
+                        row.version_id,
+                        row.lineage_id,
+                        "FAILED",
+                        canonical_json(record),
+                    )
+                else:  # the key is bound to this rejection, in the record's own transaction
+                    bound = self.store.bind_invocation(
+                        idempotency,
+                        inference_id=inference_id,
+                        addressed_by=addressed_by,
+                        version_id=row.version_id,
+                        lineage_id=row.lineage_id,
+                        revision=revision,
+                        owner="",
+                        lease_expires_at=0.0,
+                        rejection_json=canonical_json(record),
+                    )
+                    if bound is not None:  # another request bound the key first
+                        return self._replayed(idempotency, bound, inputs, principal), True
                 exc.details["inference_id"] = inference_id
                 exc.details["failure_kind"] = INPUT_SCHEMA_REJECTED
             raise
@@ -950,8 +1155,74 @@ class ChampionDeployments:
                 "PRODUCTION version serves inference",
                 state=row.state.value,
             )
-        bound = bind_version(document, self._runtime())
-        inference_id = self.ids()
+        if idempotency is None:
+            bound_version = bind_version(document, self._runtime())
+            inference_id = self.ids()
+
+            def record(status: str, record_json: str, output: Any) -> InferenceRow:
+                return self.store.record_inference(  # a keyless record keeps the hash only
+                    inference_id, row.version_id, row.lineage_id, status, record_json
+                )
+
+            view = self._execute(
+                row,
+                document,
+                bound_version,
+                values,
+                inference_id,
+                addressed_by=addressed_by,
+                revision=revision,
+                principal=principal,
+                persist=record,
+            )
+            return view, False
+        # Idempotent: everything that can refuse runs first and sends nothing (a refusal binds
+        # no key); then the key is bound RESERVED; the first provider request waits for the
+        # RESERVED -> STARTED commit (``_FirstRequestGate``).
+        inference_id, owner = self.ids(), _owner()
+        gate = self._gate(inference_id, owner)
+        bound_version = bind_version(document, self._runtime(), gate)
+        existing = self.store.bind_invocation(
+            idempotency,
+            inference_id=inference_id,
+            addressed_by=addressed_by,
+            version_id=row.version_id,
+            lineage_id=row.lineage_id,
+            revision=revision,
+            owner=owner,
+            lease_expires_at=self._lease(),
+        )
+        if existing is not None:  # another request bound the key first: nothing runs here
+            return self._replayed(idempotency, existing, inputs, principal), True
+        return self._run_owned(
+            row,
+            document,
+            bound_version,
+            values,
+            inference_id,
+            owner,
+            idempotency=idempotency,
+            addressed_by=addressed_by,
+            revision=revision,
+            principal=principal,
+            inputs=inputs,
+        )
+
+    def _execute(
+        self,
+        row: VersionRow,
+        document: Mapping[str, Any],
+        bound: BoundVersion,
+        values: Mapping[str, Any],
+        inference_id: str,
+        *,
+        addressed_by: str,
+        revision: int | None,
+        principal: Mapping[str, Any] | None,
+        persist: Callable[[str, str, dict[str, Any] | None], InferenceRow | None],
+    ) -> InferenceView:
+        """Run the bound version once and ``persist(status, record_json, output)`` its measured
+        outcome (``None``: this process no longer owns the invocation, nothing was stored)."""
         task = ExecutionTask(
             contract=bound.contract, example=ExampleInput(row_id=inference_id, values=values)
         )
@@ -982,9 +1253,9 @@ class ChampionDeployments:
         )
         record["authenticated_principal"] = _principal(principal)
         status = "SUCCEEDED" if failure is None else "FAILED"
-        stored = self.store.record_inference(
-            inference_id, row.version_id, row.lineage_id, status, canonical_json(record)
-        )
+        stored = persist(status, canonical_json(record), output)
+        if stored is None:
+            raise _ReservationLost(f"invocation {inference_id} is owned by another process")
         details = {"inference_id": inference_id, "workflow_version": row.version_id}
         if failure is not None:
             kind = failure["kind"]
@@ -994,6 +1265,264 @@ class ChampionDeployments:
         return InferenceView.model_validate(
             record | {"output": output, "created_at": stored.created_at}
         )
+
+    # -- Idempotency-Key invocations -----------------------------------------------------------
+    def _sealer(self) -> BlobCipher:
+        if self.outputs is None:
+            raise InferenceBackendUnavailable(
+                "Idempotency-Key invocations need the workspace data keyring to store their "
+                "output for retries; none is configured in this process"
+            )
+        return self.outputs
+
+    def _lease(self) -> float:
+        return self.lease_clock() + self.lease_s
+
+    def _gate(self, inference_id: str, owner: str) -> _FirstRequestGate:
+        return _FirstRequestGate(
+            lambda: self.store.start_invocation(inference_id, owner, self._lease())
+        )
+
+    def _run_owned(
+        self,
+        row: VersionRow,
+        document: Mapping[str, Any],
+        bound: BoundVersion,
+        values: Mapping[str, Any],
+        inference_id: str,
+        owner: str,
+        *,
+        idempotency: IdempotencyClaim,
+        addressed_by: str,
+        revision: int | None,
+        principal: Mapping[str, Any] | None,
+        inputs: Mapping[str, Any],
+    ) -> tuple[InferenceView, bool]:
+        """Run an invocation this process owns, renewing its lease; the outcome and the
+        terminal state commit together (``finish_invocation``)."""
+
+        def finish(status: str, record_json: str, output: Any) -> InferenceRow | None:
+            sealed = None
+            if output is not None:  # SUCCEEDED: its retries return this exact output
+                sha = canonical_hash(output)  # = the record's output_sha256
+                sealed = (sha, self._sealer().seal(canonical_json(output).encode("ascii"), sha))
+            return self.store.finish_invocation(inference_id, owner, status, record_json, sealed)
+
+        lease = Lease(
+            _InvocationLeases(self.store),  # type: ignore[arg-type]
+            (inference_id, owner),  # type: ignore[arg-type]
+            self.lease_s,
+            self.lease_clock,
+        )
+        try:
+            with _Heartbeat(lease, self.lease_s / 3) if self.heartbeat else nullcontext():
+                view = self._execute(
+                    row,
+                    document,
+                    bound,
+                    values,
+                    inference_id,
+                    addressed_by=addressed_by,
+                    revision=revision,
+                    principal=principal,
+                    persist=finish,
+                )
+            return view, False
+        except _ReservationLost:  # taken over before it sent anything: report the owner's state
+            current = self.store.invocation(idempotency.operation, idempotency.key_hash)
+            assert current is not None
+            return self._replayed(idempotency, current, inputs, principal), True
+
+    def _replay(
+        self,
+        claim: IdempotencyClaim,
+        inputs: Mapping[str, Any],
+        principal: Mapping[str, Any] | None,
+    ) -> InferenceView | None:
+        """The invocation an earlier request with this key created (``None``: the key is
+        unused)."""
+        current = self.store.invocation(claim.operation, claim.key_hash)
+        return None if current is None else self._replayed(claim, current, inputs, principal)
+
+    def _replayed(
+        self,
+        claim: IdempotencyClaim,
+        current: InvocationRow,
+        inputs: Mapping[str, Any],
+        principal: Mapping[str, Any] | None,
+    ) -> InferenceView:
+        """The authoritative state of the invocation ``claim``'s key is bound to. It never makes
+        a second provider request for that invocation:
+
+            SUCCEEDED    the stored inference with its sealed output (``_output``)
+            FAILED       the original error, with the same inference id
+            RESERVED / STARTED, owner alive        ``InferenceInProgress``
+            STARTED, owner dead -> AMBIGUOUS       ``InferenceAmbiguousAttempt``
+            RESERVED, owner dead                   resumed on the version it bound (it provably
+                                                   sent nothing), or ABANDONED if that version no
+                                                   longer serves (``InferenceDeploymentChanged``)
+        """
+        if current.request_hash != claim.request_hash:
+            raise IdempotencyConflict(
+                "this Idempotency-Key was already used for a different request"
+            )
+        try:
+            for _ in range(3):  # each pass sees the state another process just moved it to
+                details: dict[str, str | int | None] = {
+                    "inference_id": current.inference_id,
+                    "workflow_version": current.version_id,
+                    "state": current.state.value,
+                }
+                if current.state in FINISHED:
+                    return self._finished(current, inputs)
+                if current.state is InvocationState.AMBIGUOUS:
+                    raise InferenceAmbiguousAttempt(
+                        "this invocation may have reached the model provider, but its outcome "
+                        "was never stored; it is not re-sent (use a new Idempotency-Key to run "
+                        "a new invocation)",
+                        **details,
+                    )
+                if current.state is InvocationState.ABANDONED:
+                    raise InferenceDeploymentChanged(_ABANDONED, **details)
+                now = self.lease_clock()
+                if current.lease_expires_at > now:
+                    raise InferenceInProgress(
+                        "this invocation is still running; retry later", **details
+                    )
+                if current.state is InvocationState.STARTED:
+                    self.store.mark_ambiguous(current.inference_id, now)
+                else:
+                    resumed = self._resume(claim, current, inputs, principal, now)
+                    if resumed is not None:
+                        return resumed
+                moved = self.store.invocation(claim.operation, claim.key_hash)
+                assert moved is not None
+                current = moved
+            raise InferenceInProgress("this invocation is still running; retry later", **details)
+        except DeploymentError as exc:
+            exc.replayed = True  # this request created no invocation
+            raise
+
+    def _resume(
+        self,
+        claim: IdempotencyClaim,
+        current: InvocationRow,
+        inputs: Mapping[str, Any],
+        principal: Mapping[str, Any] | None,
+        now: float,
+    ) -> InferenceView | None:
+        """Take over a dead owner's RESERVED invocation and run it on the version it bound;
+        ``None``: another process (or a deployment write) moved it first. Whether the bound
+        version still serves is re-checked inside the take-over / abandon CAS itself, so a
+        promotion or rollback racing this retry can never make it run a version that no longer
+        serves the address - nor another version."""
+        row = self._row(current.version_id)
+        document = check_document(row)
+        serving = (
+            frozenset({VersionState.PRODUCTION})
+            if current.addressed_by == "production"
+            else DEPLOYABLE
+        )
+        if row.state not in serving:
+            if self.store.abandon_invocation(current.inference_id, current.owner, now, serving):
+                raise InferenceDeploymentChanged(
+                    _ABANDONED,
+                    inference_id=current.inference_id,
+                    workflow_version=current.version_id,
+                    state=InvocationState.ABANDONED.value,
+                )
+            return None
+        contract = TaskContract.model_validate(document["contract"]["task_contract"])
+        values = validate_inputs(contract, inputs)  # the same request was valid when bound
+        owner = _owner()
+        gate = self._gate(current.inference_id, owner)
+        bound = bind_version(document, self._runtime(), gate)  # a refusal leaves it reserved
+        if not self.store.take_over_invocation(
+            current.inference_id, current.owner, owner, now, self._lease(), serving
+        ):
+            return None
+        view, _ = self._run_owned(
+            row,
+            document,
+            bound,
+            values,
+            current.inference_id,
+            owner,
+            idempotency=claim,
+            addressed_by=current.addressed_by,
+            revision=current.deployment_revision,
+            principal=principal,
+            inputs=inputs,
+        )
+        return view
+
+    def _finished(self, current: InvocationRow, inputs: Mapping[str, Any]) -> InferenceView:
+        """A finished invocation as its first response reported it: the stored inference with
+        its sealed output, or the same error with the same inference id. It never depends on
+        the deployment now: a version promoted, replaced or rolled back since still replays."""
+        view = self.inference(current.inference_id)
+        if view.status == "SUCCEEDED":
+            return view.model_copy(update={"output": self._output(view)})
+        failure = view.failure or {}
+        kind = failure.get("kind")
+        if kind == INPUT_SCHEMA_REJECTED:  # the same request: the same violation, re-derived
+            row = self._row(current.version_id)
+            contract = TaskContract.model_validate(check_document(row)["contract"]["task_contract"])
+            try:
+                validate_inputs(contract, inputs)
+            except InvalidInferenceRequest as exc:
+                exc.details["inference_id"] = view.inference_id
+                exc.details["failure_kind"] = INPUT_SCHEMA_REJECTED
+                raise
+        details = {"inference_id": view.inference_id, "workflow_version": view.workflow_version}
+        message = str(failure.get("message", "the invocation failed"))
+        if kind == "output_schema_invalid":
+            raise OutputSchemaViolation(message, **details, failure_kind=kind)
+        raise InferenceFailed(message, **details, failure_kind=str(kind))
+
+    def _output(self, view: InferenceView) -> dict[str, Any]:
+        """The sealed output of a SUCCEEDED keyed invocation, authenticated (AES-GCM, bound to
+        this workspace and the output hash) and re-hashed against its inference record."""
+        details = {"inference_id": view.inference_id, "workflow_version": view.workflow_version}
+        stored = self.store.invocation_output(view.inference_id)
+        if stored is None or stored[0] != view.output_sha256:
+            raise InferenceOutputUnavailable(
+                "the stored output of this invocation is missing", **details
+            )
+        try:
+            plain = self._sealer().open(stored[1], stored[0])
+        except (DecryptionError, NotEncrypted, UnknownKey):
+            raise InferenceOutputUnavailable(
+                "the stored output of this invocation cannot be opened", **details
+            ) from None
+        output = json.loads(plain)
+        if not isinstance(output, dict) or canonical_hash(output) != view.output_sha256:
+            raise InferenceOutputUnavailable(
+                "the stored output does not match its inference record", **details
+            )
+        return output
+
+    def rekey_outputs(self) -> int:
+        """``secure-data`` key rotation: re-seal every stored output under the active key."""
+        sealer = self._sealer()
+
+        def reseal(sha: str, envelope: bytes) -> bytes | None:
+            if BlobCipher.key_id_of(envelope) == sealer.keyring.active_id:
+                return None
+            return sealer.seal(sealer.open(envelope, sha), sha)
+
+        return self.store.rekey_outputs(reseal)
+
+
+_ABANDONED = (
+    "this invocation never ran, and the workflow version it was bound to no longer serves this "
+    "address; it is not moved to another version (use a new Idempotency-Key)"
+)
+
+
+def _owner() -> str:
+    """A fencing token for one process's ownership of one invocation."""
+    return "own-" + secrets.token_hex(16)
 
 
 def _outcome(

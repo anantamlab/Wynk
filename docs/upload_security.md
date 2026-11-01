@@ -172,7 +172,9 @@ Each rule is one bounded regular expression, some confirmed by a checksum.
 * Key material never sits beside the ciphertext: it comes from the environment or from a file
   outside the data dir. Only the key id is stored in each envelope.
 * Rotation: prepend a new key (`WYNK_DATA_KEYS="k2:...,k1:..."`), restart, then run
-  `python -m api.tenancy secure-data --data-dir ...`. It re-encrypts blobs under the active key.
+  `python -m api.tenancy secure-data --data-dir ...`. It re-encrypts blobs under the active key,
+  and the sealed outputs of `Idempotency-Key` inference invocations (same envelope, same
+  workspace key; see champion_inference.md).
   Retire the old key only after that.
 * Upload previews are not persisted (before #33 they were plaintext in `metadata.sqlite3`). They
   are derived from the decrypted blob on read. `secure-data` also encrypts pre-#33 plaintext blobs

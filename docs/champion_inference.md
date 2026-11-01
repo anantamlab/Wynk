@@ -150,11 +150,87 @@ Every executed invocation appends an immutable `inference_records` row (`wynk-in
 | `provenance` | `artifact_id`, `provenance_id`, `experiment_id`, `job_id`, `promotion_id`, `run_id`, `strategy`, `seed` |
 | `model` | `model_hash`, `registry_entry_hash`, entry name |
 | `versions` | model / prompt / compiler / grammar / benchmark versions, plus the exact live websearch `evidence_source` when used |
-| `run_id`, `request_sha256`, `output_sha256`, `failure` | the run; inputs and output are kept as hashes only |
+| `run_id`, `request_sha256`, `output_sha256`, `failure` | the run; inputs and output are kept as hashes only (an `Idempotency-Key` invocation also seals its output for its retries, below) |
 | `usage` | measured `model_calls`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `latency_s`; `cost` only when the pinned registry entry has prices (`cost_authoritative`) |
 
 `GET /api/v1/inferences/{inference_id}` returns the record (without the output). Monitoring, drift
 detection and re-optimization (#31) are in [production_monitoring.md](production_monitoring.md).
+
+### Idempotent invocations (`Idempotency-Key`)
+
+Both `invoke` routes accept an optional `Idempotency-Key` header: the format of
+[durable_jobs.md](durable_jobs.md) (`1-128` of `A-Z a-z 0-9 _ . : -`, starting with a letter or
+digit; a malformed key is `400 invalid_request` before anything runs). Without it, an invoke
+behaves exactly as above. With it:
+
+* **Scope.** A key belongs to the authenticated caller's workspace and to one operation
+  (`deployments.invoke` or `workflows.invoke`). It is stored only as its sha256, in the
+  workspace's own `deployments.sqlite3` (`inference_invocations`), and is never echoed or logged.
+  Scope (`invoke`) and authentication are checked by the tenant router before the key is read, so
+  an unauthorized caller learns nothing about it.
+* **Same request.** The request hash covers the operation, the addressed lineage / version and
+  the canonical body (key order and whitespace do not matter). The same key with another request
+  is `409 idempotency_conflict` and changes nothing.
+* **Bound version.** The key binds the invocation id, the version and, for production, the
+  deployment revision the first request resolved. A retry never runs a version promoted, staged
+  or rolled back later.
+* **Intent before any provider call.** Inputs are validated and the version is bound (no request
+  is sent while binding). Then the key is bound `RESERVED` in one `BEGIN IMMEDIATE` transaction.
+  Of concurrent requests (threads or processes) exactly one binds it. The first model or
+  websearch request of the run waits until the invocation moves `RESERVED → STARTED` (a
+  compare-and-set on the owner's fencing token). The measured outcome (inference record, usage,
+  cost) and the terminal state commit in one transaction. A rejected request (`422`) is bound to
+  its one telemetry record.
+
+A retry gets the invocation's current, authoritative state with `Idempotent-Replayed: true`. It
+never makes a second provider request for that invocation:
+
+| state | retry response |
+| --- | --- |
+| `SUCCEEDED` | `200`, the same response as the first one, `output` included (opened from its sealed copy, below) |
+| `FAILED` | the original error (`422` / `502`) with the same `details.inference_id` |
+| `RESERVED` / `STARTED`, owner alive | `409 inference_in_progress` (`details.state`, `details.inference_id`); nothing starts |
+| `STARTED`, owner dead | `409 inference_ambiguous_attempt` (state `AMBIGUOUS`). A request may have reached the provider. It is never re-sent. |
+| `RESERVED`, owner dead | resumed exactly once on the bound version (it provably sent nothing). If that version no longer serves the address, the state becomes `ABANDONED`: `409 inference_deployment_changed`. |
+
+"Owner alive" means the owner's lease (30 s on the shared wall clock, renewed every 10 s while it
+runs) has not expired. Safety does not depend on the clock: a slow owner whose reservation was
+taken over fails its `RESERVED → STARTED` move and sends nothing. An owner marked ambiguous
+while it still runs records its measured outcome when it finishes (`AMBIGUOUS → SUCCEEDED |
+FAILED`). Nothing else resolves an ambiguous invocation. To pay for a new attempt, the client
+sends a new key. Monitoring reads `inference_records` only, so a replay adds no record, usage or
+cost.
+
+**The crash boundary.** `STARTED` is committed (`synchronous=FULL`, its own transaction) before
+the first model or websearch request leaves the process; the gated client and search source are
+the only paths a deployed version has to a provider. A process that dies before that commit sent
+nothing: its `RESERVED` invocation is resumed once. One that dies after it is `AMBIGUOUS`, even
+if it died before its request left: no process can prove that, so it is never re-sent. A failed
+start commit (a database error) sends nothing and finishes the invocation `FAILED`.
+
+**Deployment changes.** A finished invocation replays from its own stored state, whatever was
+promoted, replaced or rolled back since (by production or by version). A `RESERVED` one is
+resumed only on the version it bound and only while that version still serves its address:
+`STAGING` / `PRODUCTION` for a version address, `PRODUCTION` for the lineage address. The check
+is part of the take-over compare-and-set, so a deployment write racing the retry cannot slip
+between them. Otherwise it is `ABANDONED` (`409 inference_deployment_changed`).
+
+**The stored output.** Only a `SUCCEEDED` `Idempotency-Key` invocation keeps its output, for its
+retries (`inference_outputs`). It is never plaintext at rest: an AES-256-GCM envelope under the
+workspace's #33 data key, whose associated data binds the workspace and the output's sha256.
+It is written in the finishing transaction (a `SUCCEEDED` invocation without one is refused by
+trigger). A replay authenticates it and re-hashes it against the record's `output_sha256`;
+anything else is `500 storage_error`, and nothing is re-run. Only a caller with `invoke` scope
+in the same workspace, the same key and the same request gets it. `GET /inferences/{id}`,
+monitoring and keyless invocations still keep the hash only. Key rotation:
+`python -m api.tenancy secure-data` re-seals these outputs under the active key too
+(`inference_outputs_rekeyed`); retire the old key only after that. Without a keyring the
+process refuses keyed invocations (`503 inference_backend_unavailable`) before binding anything.
+Like the keys (#60), stored outputs have no expiry yet.
+
+The provider offers no request deduplication. So this is at most one provider execution per key
+*from Wynk*, not exactly-once at the provider: a provider can still receive a request whose
+outcome Wynk never learns (`AMBIGUOUS`).
 
 ## API
 
@@ -164,11 +240,11 @@ GET  /api/v1/workflows?lineage=...
 GET  /api/v1/workflows/{version_id}
 POST /api/v1/workflows/{version_id}/stage       {"expected_revision", "actor"?}
 POST /api/v1/workflows/{version_id}/promote     {"expected_revision", "actor"?}
-POST /api/v1/workflows/{version_id}/invoke      {"inputs"}
+POST /api/v1/workflows/{version_id}/invoke      {"inputs"}               Idempotency-Key?
 GET  /api/v1/deployments/{lineage}              slots + revision
 GET  /api/v1/deployments/{lineage}/history
 POST /api/v1/deployments/{lineage}/rollback     {"expected_revision", "version_id"?, "actor"?}
-POST /api/v1/deployments/{lineage}/invoke       {"inputs"}
+POST /api/v1/deployments/{lineage}/invoke       {"inputs"}               Idempotency-Key?
 GET  /api/v1/inferences/{inference_id}
 ```
 
@@ -187,3 +263,13 @@ entries, swapped clients and incompatible prompt or compiler versions are refuse
 call; bad requests are refused before binding; output schema enforced; fixed, random and ACO
 champions deploy identically; the exact champion genome runs with every optimizer, evaluator and
 promotion entry point trapped; inference records trace to the #26 artifact and provenance.
+
+`tests/test_inference_idempotency.py` (the real router, MAF runner and HTTP model client against a
+fake provider that counts every HTTP request): replay and conflict, canonical bodies, failed and
+rejected replays, malformed keys, quotas, workspace isolation, authorization, threads and
+independent processes, crashes before / during / after execution and before the outcome is
+stored, restarts, in-progress and ambiguous states and their resolution, promotion / rollback /
+staging between requests, and monitoring totals; the sealed replay output (at rest, tampering,
+key rotation), `STARTED` observed at the far end of the model and search connections, crashes
+and errors around the start commit, concurrent recovery, a fenced stalled owner, a promotion
+racing a takeover, and conflicting payloads in every state and under concurrency.
