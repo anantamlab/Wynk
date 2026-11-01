@@ -1214,7 +1214,8 @@ def utc() -> str:
 def secure_data(router: TenantRouter) -> dict[str, Any]:
     """Bring every workspace up to #33: encrypt pre-#33 plaintext blobs (and re-encrypt blobs
     under a rotated-out key with the active one, and the sealed outputs of keyed invocations
-    and the sealed feedback payloads too), and scrub the plaintext row previews pre-#33 upload records kept. Idempotent."""
+    and the sealed feedback payloads too), and scrub the plaintext row previews pre-#33 upload
+    records kept. Idempotent."""
     out: dict[str, Any] = {}
     for ws in router.identity.workspaces():
         api = router.tenant(ws.workspace_id).api

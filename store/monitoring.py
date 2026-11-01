@@ -413,7 +413,8 @@ class SQLiteMonitoringStore:
             if fresh is not None and self._tx(
                 lambda c, f=fresh, i=feedback_id, e=envelope: (
                     c.execute(
-                        "UPDATE feedback_payloads SET envelope=? WHERE feedback_id=? AND envelope=?",
+                        "UPDATE feedback_payloads SET envelope=? "
+                        "WHERE feedback_id=? AND envelope=?",
                         (f, i, e),
                     ).rowcount
                 )

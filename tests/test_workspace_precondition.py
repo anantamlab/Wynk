@@ -13,6 +13,7 @@ the fake provider's count of real HTTP requests plus the workspaces' own rows.
 
 from __future__ import annotations
 
+import http.client
 import io
 import json
 import re
@@ -23,7 +24,7 @@ from typing import Any
 
 import pytest
 
-from api.product import _ROUTES
+from api.product import _ROUTES, Server, make_handler
 from api.tenancy import _ADMIN_ROUTES, EXPECTED_WORKSPACE
 from tests.conftest import TEST_DATA_KEYS
 from tests.dogfood_support import LINEAGE, FakeProvider
@@ -259,3 +260,62 @@ def test_concurrent_key_switches_never_run_in_the_other_workspace(two):
 
 def test_the_header_name_is_the_documented_one():
     assert EXPECTED_WORKSPACE == HEADER.lower()
+
+
+def test_a_key_without_the_scope_gets_the_mismatch_first(two):
+    """The precondition runs before the scope check: a read-only key that names another
+    workspace learns only "wrong workspace", in the same answer as any other key."""
+    made = two.w.ok(
+        two.B["key"], "POST", "workspace/keys", {"name": "ro", "scopes": ["read"]}, status=201
+    )
+    reader = made["secret"]
+    sent = two.sent()
+    err(two.post(reader, PRODUCTION, {"inputs": NEW_ORDER}, expected=two.A["ws"]), 412,
+        "workspace_mismatch")  # fmt: skip
+    err(two.post(reader, PRODUCTION, {"inputs": NEW_ORDER}, expected=two.B["ws"]), 403,
+        "insufficient_scope")  # fmt: skip
+    assert two.sent() == sent
+
+
+def http_post(router, path: str, headers: list[tuple[str, str]], body: Any):
+    """One request through the real stdlib HTTP server (``api.product.respond``), so a header
+    can be sent twice exactly as a client or proxy would."""
+    server = Server(("127.0.0.1", 0), make_handler(router))  # type: ignore[arg-type]
+    t = threading.Thread(target=server.serve_forever, daemon=True)
+    t.start()
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=60)
+        raw = json.dumps(body).encode()
+        conn.putrequest("POST", "/api/v1/" + path)
+        for name, value in [("Content-Type", "application/json"), *headers]:
+            conn.putheader(name, value)
+        conn.putheader("Content-Length", str(len(raw)))
+        conn.endheaders(raw)
+        res = conn.getresponse()
+        out = res.status, json.loads(res.read())
+        conn.close()
+        return out
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize("order", ["other-first", "own-first"])
+def test_a_repeated_header_is_refused_over_http_never_resolved_to_one_copy(two, order):
+    own, other = two.B["ws"], two.A["ws"]
+    copies = [other, own] if order == "other-first" else [own, other]
+    auth = ("Authorization", f"Bearer {two.B['key']}")
+    before, sent = two.counts(two.B), two.sent()
+    status, body = http_post(
+        two.w.r, PRODUCTION, [auth, *((HEADER, c) for c in copies)], {"inputs": NEW_ORDER}
+    )
+    assert (status, body["error"]["code"]) == (400, "invalid_request"), body
+    assert body["error"]["details"] == {"field": HEADER}
+    assert two.sent() == sent and two.counts(two.B) == before
+    # one copy over the same server works; a repeated Authorization is not resolved either
+    status, body = http_post(two.w.r, PRODUCTION, [auth, (HEADER, own)], {"inputs": NEW_ORDER})
+    assert status == 200, body
+    status, body = http_post(
+        two.w.r, PRODUCTION, [("Authorization", "Bearer wynk_sk_x"), auth], {"inputs": NEW_ORDER}
+    )
+    assert (status, body["error"]["code"]) == (401, "unauthenticated"), body
