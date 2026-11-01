@@ -106,7 +106,7 @@ describe("useIdempotentSend", () => {
     const { result } = renderHook(() => useIdempotentSend<{ id: string }>("exp", instant));
     const { send, keys } = script("network_error");
     await act(() => result.current.submit("form-a", send));
-    await act(() => result.current.retry(send));
+    await act(() => result.current.retry());
     expect(keys[1]).toBe(keys[0]);
     await act(() => result.current.submit("form-a", send)); // done before: a new intent
     expect(keys[2]).not.toBe(keys[0]);
@@ -116,19 +116,59 @@ describe("useIdempotentSend", () => {
     expect(other.keys[1]).not.toBe(other.keys[0]);
   });
 
-  it("an ambiguous outcome is never retried: retry() does nothing, only sendWithNewKey sends again", async () => {
+  it.each([
+    ["inference_ambiguous_attempt", "ambiguous"],
+    ["inference_deployment_changed", "deployment_changed"],
+    ["idempotency_conflict", "conflict"],
+  ])("after %s, neither retry() nor submit() of the same request sends: only sendWithNewKey does", async (code, kind) => {
+    const { result } = renderHook(() => useIdempotentSend<{ id: string }>("inf", instant));
+    const { send, keys } = script(code);
+    await act(() => result.current.submit("x", send));
+    expect(result.current.state).toMatchObject({ phase: "settled", kind });
+    expect(result.current.held).toBe("x");
+    await act(async () => {
+      expect(await result.current.retry()).toBeNull();
+      expect(await result.current.submit("x", send)).toBeNull(); // the main button: no silent new key
+    });
+    expect(keys).toHaveLength(1);
+    expect(result.current.state).toMatchObject({ phase: "settled", kind }); // the warning stays on screen
+    await act(() => result.current.submit("y", send)); // an edited request is a new intent
+    expect(keys).toHaveLength(2);
+    expect(keys[1]).not.toBe(keys[0]);
+    expect(result.current.held).toBeNull();
+  });
+
+  it("sendWithNewKey is the deliberate way to run a held request again", async () => {
     const { result } = renderHook(() => useIdempotentSend<{ id: string }>("inf", instant));
     const { send, keys } = script("inference_ambiguous_attempt");
     await act(() => result.current.submit("x", send));
-    expect(result.current.state).toMatchObject({ phase: "settled", kind: "ambiguous" });
-    await act(async () => {
-      expect(await result.current.retry(send)).toBeNull();
-    });
-    await act(() => result.current.submit("x", send)); // the same request again is a new key, never the ambiguous one
-    expect(keys).toHaveLength(2);
-    expect(keys[1]).not.toBe(keys[0]);
     await act(() => result.current.sendWithNewKey("x", send));
-    expect(new Set(keys).size).toBe(3);
+    expect(new Set(keys).size).toBe(2);
+    expect(result.current.state).toMatchObject({ phase: "settled", kind: "done" });
+    expect(result.current.held).toBeNull();
+  });
+
+  it("retry() resends the ORIGINAL unresolved request, not the edited form", async () => {
+    const { result } = renderHook(() => useIdempotentSend<{ id: string }>("inf", instant));
+    const bodies: string[] = [];
+    const keys: string[] = [];
+    let fail = true;
+    const sendFor = (body: string) => async (key: string) => {
+      bodies.push(body);
+      keys.push(key);
+      if (fail) {
+        fail = false;
+        throw err("network_error");
+      }
+      return done({ id: body }, true);
+    };
+    await act(() => result.current.submit("original", sendFor("original")));
+    expect(result.current.state).toMatchObject({ phase: "settled", kind: "unresolved" });
+    // the person edits the form; the page's retry button calls retry() with no request
+    await act(() => result.current.retry());
+    expect(bodies).toEqual(["original", "original"]);
+    expect(keys[1]).toBe(keys[0]);
+    expect(result.current.state).toMatchObject({ phase: "settled", kind: "done", value: { id: "original" } });
   });
 
   it("a double click sends once", async () => {

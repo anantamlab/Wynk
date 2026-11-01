@@ -262,10 +262,11 @@ function InvokePanel({ lineage, deployment, versions }: { lineage: string; deplo
     const r = request();
     if (r) void send.sendWithNewKey(r.fingerprint, r.run);
   };
-  const retry = () => {
-    const r = request();
-    if (r) void send.retry(r.run);
-  };
+  // the original request, not the form as it is now
+  const retry = () => void send.retry();
+  // an ambiguous, changed or conflicting request is sent again only with a new key, deliberately
+  const now = toInputs(fields, values);
+  const isHeld = send.held !== null && !("error" in now) && send.held === JSON.stringify([chosen.target, now.inputs]);
   const result = send.state.phase === "settled" && send.state.kind === "done" ? send.state.value : null;
 
   return (
@@ -324,7 +325,7 @@ function InvokePanel({ lineage, deployment, versions }: { lineage: string; deplo
             {invalid}
           </p>
         )}
-        <button type="submit" className="btn btn-primary btn-sm" disabled={busy}>
+        <button type="submit" className="btn btn-primary btn-sm" disabled={busy || isHeld}>
           {busy ? "Running…" : `Run on ${targetLabel(chosen.target)}`}
         </button>
       </form>

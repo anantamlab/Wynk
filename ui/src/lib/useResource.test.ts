@@ -46,6 +46,20 @@ describe("useResource polling", () => {
     expect(result.current).toMatchObject({ state: "ready", data: "RUNNING" });
   });
 
+  it.each(["unauthenticated", "insufficient_scope", "job_not_found", "contract_mismatch"])(
+    "a refused poll (%s) stops polling and is not retried behind the person's back",
+    async (code) => {
+      const load = vi.fn<() => Promise<string>>().mockResolvedValueOnce("RUNNING").mockRejectedValue(new ApiError(code, `${code} (test)`));
+      const { result } = renderHook(() => useResource(load, [], { pollMs: 100, shouldPoll: () => true }));
+      await flush();
+      await advance(100); // the poll is refused: the last answer stays, marked stale
+      expect(result.current).toMatchObject({ state: "ready", data: "RUNNING" });
+      expect(result.current.state === "ready" && result.current.stale).toMatchObject({ code });
+      await advance(10_000);
+      expect(load).toHaveBeenCalledTimes(2);
+    },
+  );
+
   it("a null answer is an answer, not an error", async () => {
     const { result } = renderHook(() => useResource(async () => null, []));
     await flush();

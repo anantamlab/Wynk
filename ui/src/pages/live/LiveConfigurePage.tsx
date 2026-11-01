@@ -142,6 +142,7 @@ export function LiveConfigurePage() {
     [spec, model, splitsHash, seeds, strategies, instructions, taskId, taskType, evaluator, maxCandidates, caps],
   );
 
+  // each submission keeps the body of its own render; `retry()` resends that original body
   const create = (key: string) => lifecycle().createJob(body!, key);
   const finish = (outcome: Awaited<ReturnType<typeof send.submit>>) => {
     if (outcome?.kind === "done") navigate(`../${outcome.value.job_id}`, { relative: "path", state: { replayed: outcome.replayed } });
@@ -287,11 +288,13 @@ export function LiveConfigurePage() {
       <SendStatus
         state={send.state}
         noun="experiment"
-        onRetry={async () => finish(await send.retry(create))}
-        onNewKey={async () => finish(await send.sendWithNewKey(fingerprint, create))}
+        onRetry={async () => finish(await send.retry())}
+        onNewKey={async () => {
+          if (body) finish(await send.sendWithNewKey(fingerprint, create));
+        }}
       />
       <div className="flex justify-end">
-        <button type="submit" className="btn btn-primary" disabled={!body || sending}>
+        <button type="submit" className="btn btn-primary" disabled={!body || sending || send.held === fingerprint}>
           {sending ? "Creating…" : "Create experiment"}
         </button>
       </div>

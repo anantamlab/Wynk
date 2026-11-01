@@ -429,7 +429,9 @@ class EvaluateTrigger(_Strict):
 
 class ModelView(_Strict):
     """A registry entry as a client may see it: what to pin (``model_hash``) and what it costs.
-    The endpoint (operator infrastructure) and the provider credential are never returned."""
+    This view never returns the endpoint (operator infrastructure) or the provider credential.
+    (The pinned ``registry_entry`` inside provenance and workflow documents still carries its
+    endpoint, as before; it never carries a credential.)"""
 
     name: str
     provider: str

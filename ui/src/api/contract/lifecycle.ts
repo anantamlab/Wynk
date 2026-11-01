@@ -42,7 +42,7 @@ export interface ModelPricingWire {
   completion_per_million: number;
 }
 
-/** api/product.py ModelView: a registry entry without its endpoint or any credential */
+/** api/product.py ModelView (`GET /models`): a registry entry without its endpoint or any credential */
 export interface ModelWire {
   name: string;
   provider: string;

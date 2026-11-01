@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { errorMessage } from "@/api";
+import { ApiError, errorMessage } from "@/api";
+
+/** Failures that pass on their own (the connection, the server's storage, a server fault). */
+const POLL_AGAIN = new Set(["network_error", "bad_response", "storage_error", "internal_error"]);
 
 export type Resource<T> =
   | { state: "loading"; data: null; error: null; reload: () => void }
@@ -23,8 +26,9 @@ interface Options<T> {
 
 /**
  * Loads data through the adapter and tracks loading, error and ready states. A failed poll
- * keeps the last good data on screen rather than blanking it, marks it `stale`, and retries with
- * exponential backoff until the server answers again.
+ * keeps the last good data on screen rather than blanking it, marks it `stale`, and, when the
+ * failure is passing (`POLL_AGAIN`), retries with exponential backoff until the server answers
+ * again. Any other failure stops the polling.
  */
 export function useResource<T>(load: () => Promise<T>, deps: unknown[], options: Options<T> = {}): Resource<T> {
   // `has`: data holds an answer (which may itself be null, e.g. "no promotion yet")
@@ -60,7 +64,10 @@ export function useResource<T>(load: () => Promise<T>, deps: unknown[], options:
         setState((s) =>
           s.has && pollMs ? { ...s, stale: err } : { data: null, has: false, error: errorMessage(err), cause: err, loading: false },
         );
-        if (pollMs) timer = setTimeout(run, Math.min(maxPollMs ?? pollMs * 8, pollMs * 2 ** ++failures));
+        // only a passing failure is polled again; a refusal (401/403, not found, a contract
+        // mismatch) stays on screen until the person reloads
+        if (pollMs && err instanceof ApiError && POLL_AGAIN.has(err.code))
+          timer = setTimeout(run, Math.min(maxPollMs ?? pollMs * 8, pollMs * 2 ** ++failures));
       }
     };
     run();

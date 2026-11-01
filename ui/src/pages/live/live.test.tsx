@@ -268,6 +268,8 @@ describe("live invocation (Phase 1 idempotent contract)", () => {
     expect(status).toHaveTextContent("Outcome unknown");
     await new Promise((r) => setTimeout(r, 700)); // longer than the first backoff: nothing resends
     expect(invokes(s.calls)).toHaveLength(1);
+    // the main button cannot send the same request again with a silent new key
+    expect(within(panel).getByRole("button", { name: /^Run on production/ })).toBeDisabled();
 
     await user.click(within(panel).getByRole("button", { name: "Run again with a new key" }));
     expect(await within(panel).findByTestId("inference-output")).toHaveTextContent('"answer": "Lincoln"');

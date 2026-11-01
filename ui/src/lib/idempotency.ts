@@ -89,64 +89,68 @@ export type SendState<T> =
   | { phase: "sending"; key: string; waiting: { code: string; attempt: number } | null }
   | ({ phase: "settled" } & Outcome<T>);
 
+/** Outcomes after which the SAME request is sent again only through `sendWithNewKey`. */
+const HELD = new Set<Outcome<unknown>["kind"]>(["ambiguous", "deployment_changed", "conflict"]);
+
 /**
  * A submit button's idempotent request. `submit(fingerprint)` starts a user intent: it reuses
  * the previous key only while the previous attempt of the SAME request is unresolved, otherwise
- * it takes a new key. `retry()` resends an unresolved request with its key. `sendWithNewKey()` is
- * the deliberate "run it again" after an ambiguous, changed or conflicting outcome.
+ * it takes a new key. After an ambiguous, changed or conflicting outcome, `submit` of the same
+ * request sends nothing (`held` names it): only `sendWithNewKey()`, the deliberate "run it
+ * again", can send it. `retry()` resends the ORIGINAL unresolved request (its key and its body),
+ * whatever the form shows now.
  */
 export function useIdempotentSend<T>(prefix: string, policy: RetryPolicy = DEFAULT_POLICY) {
   const [state, setState] = useState<SendState<T>>({ phase: "idle" });
-  const last = useRef<{ key: string; fingerprint: string; outcome: Outcome<T>["kind"] | "sending" } | null>(null);
+  /** the fingerprint of a request that only `sendWithNewKey` may send again */
+  const [held, setHeld] = useState<string | null>(null);
+  type Send = (key: string) => Promise<Sent<T>>;
+  const last = useRef<{ key: string; fingerprint: string; send: Send; outcome: Outcome<T>["kind"] | "sending" } | null>(null);
   const busy = useRef(false);
   const policyRef = useRef(policy);
   useEffect(() => {
     policyRef.current = policy;
   });
 
-  const run = useCallback(
-    async (key: string, fingerprint: string, send: (key: string) => Promise<Sent<T>>) => {
-      if (busy.current) return null; // a double click never sends twice
-      busy.current = true;
-      last.current = { key, fingerprint, outcome: "sending" };
-      setState({ phase: "sending", key, waiting: null });
-      try {
-        const outcome = await sendIdempotent(key, send, policyRef.current, (error, attempt) =>
-          setState({ phase: "sending", key, waiting: { code: error.code, attempt } }),
-        );
-        last.current = { key, fingerprint, outcome: outcome.kind };
-        setState({ phase: "settled", ...outcome });
-        return outcome;
-      } finally {
-        busy.current = false;
-      }
-    },
-    [],
-  );
+  const run = useCallback(async (key: string, fingerprint: string, send: Send) => {
+    if (busy.current) return null; // a double click never sends twice
+    busy.current = true;
+    last.current = { key, fingerprint, send, outcome: "sending" };
+    setHeld(null);
+    setState({ phase: "sending", key, waiting: null });
+    try {
+      const outcome = await sendIdempotent(key, send, policyRef.current, (error, attempt) =>
+        setState({ phase: "sending", key, waiting: { code: error.code, attempt } }),
+      );
+      last.current = { key, fingerprint, send, outcome: outcome.kind };
+      setHeld(HELD.has(outcome.kind) ? fingerprint : null);
+      setState({ phase: "settled", ...outcome });
+      return outcome;
+    } finally {
+      busy.current = false;
+    }
+  }, []);
 
   const submit = useCallback(
-    (fingerprint: string, send: (key: string) => Promise<Sent<T>>) => {
+    (fingerprint: string, send: Send) => {
       const prev = last.current;
-      const key = prev && prev.fingerprint === fingerprint && prev.outcome === "unresolved" ? prev.key : newIdempotencyKey(prefix);
+      const same = prev !== null && prev.fingerprint === fingerprint;
+      if (same && HELD.has(prev.outcome as Outcome<T>["kind"])) return Promise.resolve(null);
+      const key = same && prev.outcome === "unresolved" ? prev.key : newIdempotencyKey(prefix);
       return run(key, fingerprint, send);
     },
     [prefix, run],
   );
-  const retry = useCallback(
-    (send: (key: string) => Promise<Sent<T>>) => {
-      const prev = last.current;
-      if (!prev || prev.outcome !== "unresolved") return Promise.resolve(null);
-      return run(prev.key, prev.fingerprint, send);
-    },
-    [run],
-  );
-  const sendWithNewKey = useCallback(
-    (fingerprint: string, send: (key: string) => Promise<Sent<T>>) => run(newIdempotencyKey(prefix), fingerprint, send),
-    [prefix, run],
-  );
+  const retry = useCallback(() => {
+    const prev = last.current;
+    if (!prev || prev.outcome !== "unresolved") return Promise.resolve(null);
+    return run(prev.key, prev.fingerprint, prev.send);
+  }, [run]);
+  const sendWithNewKey = useCallback((fingerprint: string, send: Send) => run(newIdempotencyKey(prefix), fingerprint, send), [prefix, run]);
   const reset = useCallback(() => {
     last.current = null;
+    setHeld(null);
     setState({ phase: "idle" });
   }, []);
-  return { state, submit, retry, sendWithNewKey, reset };
+  return { state, held, submit, retry, sendWithNewKey, reset };
 }
