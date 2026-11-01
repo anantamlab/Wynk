@@ -105,7 +105,17 @@ missing, denied, full, does not read back, or holds a damaged record, zero reque
 screen shows `not_sent` with the reason (`workspace_unavailable`, `storage_unavailable`,
 `storage_write_failed`, `storage_verify_failed`, `storage_corrupted`, `workspace_changed`) and what
 to do. There is no memory-only fallback. A damaged record or a changed workspace offers only the
-explicit new-request action, with a duplicate-run warning. A resource that a 401/403 (or
+explicit new-request action, with a duplicate-run warning.
+
+A request that may have reached the server keeps its key. A 2xx answer that does not decode
+(`contract_mismatch`), a client error after dispatch, `internal_error` or any unknown failure is
+`unresolved`: the record stays, nothing resends on its own, and "Retry with the same key" (or the
+same values after a reload) recovers the original. Only a proven pre-dispatch failure
+(`request_not_sent`) or the API's own error envelope ends a request as refused. After an attempt
+that may have run, a refusal given before the server reads the key (401, 403, 404, 429, 503)
+keeps it unresolved. While a request of workspace A is uncertain, a submit or retry in workspace B
+sends nothing (`workspace_changed`). Only the explicit new request runs in B, with B's own key,
+and A's record stays for the return to A. A resource that a 401/403 (or
 another refusal) answers is removed from the screen and is not polled again
 (`src/lib/useResource.ts`); only network and server faults keep the last answer, marked stale.
 

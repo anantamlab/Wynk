@@ -264,6 +264,7 @@ export const ERROR_COPY: Record<string, { kind: ApiErrorKind; title: string }> =
   experiment_backend_unavailable: { kind: "unavailable", title: "This Wynk server runs no experiments (no model registry)" },
   simulated_only: { kind: "not_implemented", title: "Only the mock demo simulates this view" },
   internal_client_error: { kind: "server", title: "The Wynk UI failed" },
+  request_not_sent: { kind: "invalid", title: "The request was not sent" },
   mock_failure: { kind: "unavailable", title: "Injected mock failure" },
 };
 
@@ -285,11 +286,21 @@ export class ApiError extends Error {
   /** HTTP status, null when no response arrived */
   readonly status: number | null;
   readonly details: Record<string, string | number | null>;
+  /**
+   * `true` only when the Wynk API itself answered with its error envelope (an authoritative
+   * answer). Client codes (`network_error`, `contract_mismatch`, …) are `false`.
+   */
+  readonly fromServer: boolean;
 
-  constructor(code: string, message: string, init: { status?: number | null; details?: Record<string, string | number | null> } = {}) {
+  constructor(
+    code: string,
+    message: string,
+    init: { status?: number | null; details?: Record<string, string | number | null>; fromServer?: boolean } = {},
+  ) {
     super(message);
     this.name = "ApiError";
     this.code = code;
+    this.fromServer = init.fromServer ?? false;
     this.status = init.status ?? null;
     this.details = init.details ?? {};
     const copy = ERROR_COPY[code];

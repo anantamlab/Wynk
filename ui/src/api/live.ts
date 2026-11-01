@@ -69,7 +69,12 @@ export function createLiveApi(options: LiveOptions = {}): WynkApi {
     const init: RequestInit = { method, headers: { Accept: "application/json", ...extra } };
     if (body && "json" in body) {
       init.headers = { ...init.headers, "Content-Type": "application/json" };
-      init.body = JSON.stringify(body.json);
+      try {
+        init.body = JSON.stringify(body.json);
+      } catch (err) {
+        // proven before dispatch: nothing left the browser
+        throw new ApiError("request_not_sent", `${method} ${path}: the request body could not be encoded (${err instanceof Error ? err.message : String(err)}).`);
+      }
     } else if (body) {
       // raw bytes, never a form: the server refuses multipart bodies
       init.headers = { ...init.headers, "Content-Type": "application/octet-stream" };
@@ -91,7 +96,8 @@ export function createLiveApi(options: LiveOptions = {}): WynkApi {
     }
     if (!res.ok) {
       const envelope = decode.errorResponse(raw);
-      if (envelope) throw new ApiError(envelope.error.code, envelope.error.message, { status: res.status, details: envelope.error.details });
+      if (envelope)
+        throw new ApiError(envelope.error.code, envelope.error.message, { status: res.status, details: envelope.error.details, fromServer: true });
       throw new ApiError("bad_response", `${method} ${url} answered HTTP ${res.status} without a Wynk API error body. Is the Wynk API running behind this address?`, {
         status: res.status,
       });
@@ -101,6 +107,7 @@ export function createLiveApi(options: LiveOptions = {}): WynkApi {
     try {
       return { value: read(raw), status: res.status, replayed: res.headers?.get?.(REPLAYED) === "true" };
     } catch (err) {
+      // the server answered 2xx: for a POST, the request may have run even though its answer is unreadable
       if (err instanceof WireShapeError || err instanceof ContractMappingError)
         throw new ApiError("contract_mismatch", `${method} ${url}: ${err.message}`, { status: res.status });
       throw err;
