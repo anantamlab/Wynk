@@ -322,15 +322,20 @@ class Run:
 
     def wait_job(self, st: Stage, job_id: str) -> dict[str, Any]:
         """Poll until the job settles: COMPLETED / FAILED / CANCELLED, or INTERRUPTED for a
-        reason a worker does not resume by itself (``store.jobs.AUTO_RESUMABLE``)."""
+        reason a worker does not resume by itself (``store.jobs.AUTO_RESUMABLE``).
+        One assertion per wait, however many polls it takes (assertion counts stay
+        independent of timing)."""
         deadline = time.monotonic() + JOB_TIMEOUT_S
         while True:
-            view = self.ok(st, "GET", f"experiments/{job_id}")
-            if view["state"] in ("COMPLETED", "FAILED", "CANCELLED") or (
-                view["state"] == "INTERRUPTED" and view["reason"] not in AUTO_RESUMABLE
-            ):
-                return view
-            st.check(time.monotonic() < deadline, "job reached a terminal state in time", view=view)
+            res = self.call("GET", f"experiments/{job_id}")
+            view = res.body
+            settled = res.status == 200 and (
+                view["state"] in ("COMPLETED", "FAILED", "CANCELLED")
+                or (view["state"] == "INTERRUPTED" and view["reason"] not in AUTO_RESUMABLE)
+            )
+            if settled or res.status != 200 or time.monotonic() >= deadline:
+                st.check(settled, "the job settled in time", status=res.status, view=view)
+                return view  # type: ignore[no-any-return]
             time.sleep(0.05)
 
     # -- stages -------------------------------------------------------------------------------
@@ -941,14 +946,13 @@ def _git(*args: str) -> str:
 def build_report(results: list[RunResult]) -> dict[str, Any]:
     runs = [r.report() for r in results]
 
-    def signature(run: dict[str, Any]) -> list[Any]:
-        return [(s["name"], s["status"], s["digest"]) for s in run["stages"]]
+    def signature(run: dict[str, Any], *fields: str) -> str:
+        return json.dumps([[s[f] for f in ("name", "status", *fields)] for s in run["stages"]])
 
-    same_verdicts = (
-        len({json.dumps([(s["name"], s["status"]) for s in r["stages"]]) for r in runs}) == 1
-    )
-    same_digests = len({json.dumps(signature(r)) for r in runs}) == 1
-    deterministic = len(runs) >= 2 and same_verdicts and same_digests
+    same_verdicts = len({signature(r) for r in runs}) == 1
+    same_digests = len({signature(r, "digest") for r in runs}) == 1
+    same_assertions = len({signature(r, "assertions") for r in runs}) == 1
+    deterministic = len(runs) >= 2 and same_verdicts and same_digests and same_assertions
     passed = all(r["verdict"] == "PASS" for r in runs) and (len(runs) < 2 or deterministic)
     return {
         "schema_version": SCHEMA_VERSION,
@@ -963,6 +967,7 @@ def build_report(results: list[RunResult]) -> dict[str, Any]:
             "runs": len(runs),
             "same_verdicts": same_verdicts,
             "same_digests": same_digests,
+            "same_assertion_counts": same_assertions,
             "deterministic": deterministic,
         },
         "blocked": BLOCKED_STAGES,
@@ -983,7 +988,8 @@ def markdown(report: dict[str, Any]) -> str:
         + (" (dirty worktree)" if report["worktree_dirty"] else ""),
         f"- Python: {report['python']} on {report['platform']}",
         f"- Runs: {len(runs)}; same verdicts: {report['determinism']['same_verdicts']}; "
-        f"same digests: {report['determinism']['same_digests']}",
+        f"same digests: {report['determinism']['same_digests']}; "
+        f"same assertion counts: {report['determinism']['same_assertion_counts']}",
         "",
         "| Stage | "
         + " | ".join(f"Run {r['run']}" for r in runs)

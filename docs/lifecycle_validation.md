@@ -19,6 +19,9 @@ python -m tests.lifecycle_harness --runs 1 --out DIR # 1 run, reports in DIR
 python -m pytest tests/test_lifecycle_harness.py     # the CI entry point (2 runs, tmp dir)
 ```
 
+Two `cannot bind job ... is not pinned by any registry entry` warnings on stderr are expected: the
+recovery stage re-pins the model on purpose.
+
 Requirements: the project installed with the workflow runtime (`pip install -e ".[dev,maf]"`),
 run from the repository root. One run takes about 15-20 s. The exit code is 0 only when every
 stage passes in every run and the runs agree.
@@ -89,10 +92,13 @@ JSON fields:
 | `commit`, `worktree_dirty` | `git rev-parse HEAD` and whether the worktree had changes |
 | `python`, `platform` | The interpreter and OS |
 | `verdict` | `PASS` only if every stage passed in every run, teardown was clean, no connection was refused, and (for 2+ runs) the runs agree |
-| `determinism` | `same_verdicts` and `same_digests` across the runs |
+| `determinism` | `same_verdicts`, `same_digests` and `same_assertion_counts` across the runs |
 | `blocked` | Stages never run, with the reason |
 | `runs[]` | Per run: `seconds`, `provider_requests_total`, `non_loopback_connections_refused`, `teardown`, `verdict`, `stages[]` |
 | `stages[]` | `name`, `status` (`PASS`, `FAIL`, `BLOCKED`, `NOT_SUPPORTED`), `assertions`, `seconds`, `failure`, `reason`, `facts`, `digest` |
+
+`NOT_SUPPORTED` is reserved in the schema for a step without backend support. No stage uses it
+today: the product API supports every stage, monitoring included.
 
 `facts` holds only deterministic values (content and split hashes, row ids, counts, states,
 error codes, outputs, usage). `digest` is the `canonical_hash` of `facts`. Two runs with equal

@@ -35,6 +35,7 @@ def test_the_whole_lifecycle_passes_twice_with_identical_verdicts_and_digests(tm
         "runs": 2,
         "same_verdicts": True,
         "same_digests": True,
+        "same_assertion_counts": True,
         "deterministic": True,
     }
     for run in report["runs"]:
