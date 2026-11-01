@@ -303,6 +303,27 @@ function providerCalls(marker: string): number {
  * request's Idempotency-Key and the real answers.
  */
 /** A new workspace with its own owner key (the bootstrap key holds `admin`), so a test owns its quota. */
+/** The last audit sequence number of a workspace's trail (the trail is shared by the tests). */
+async function auditEnd(request: APIRequestContext, auth: Record<string, string> = AUTH): Promise<number> {
+  let after = 0;
+  for (;;) {
+    const page = (await api(request, "GET", `audit?after=${after}&limit=1000`, undefined, auth)).body;
+    after = page.next_after;
+    if (page.events.length < 1000) return after; // a read of the trail is itself audited: stop at a short page
+  }
+}
+
+/** Every audit event of a workspace after a sequence number. */
+async function auditSince(request: APIRequestContext, after: number, auth: Record<string, string> = AUTH) {
+  const events: { action: string; [k: string]: unknown }[] = [];
+  for (;;) {
+    const page = (await api(request, "GET", `audit?after=${after}&limit=1000`, undefined, auth)).body;
+    events.push(...page.events);
+    after = page.next_after;
+    if (page.events.length < 1000) return events;
+  }
+}
+
 async function freshWorkspace(request: APIRequestContext): Promise<Record<string, string>> {
   const created = await api(request, "POST", "workspaces", { name: `E2E workspace ${unique()}` });
   expect(created.status).toBe(201);
@@ -586,6 +607,32 @@ test("live: experiment → results → promotion → publish → stage → produ
   expect(providerCalls(marker) - providerBefore).toBe(ranOnce); // no second provider execution
   expect(await pendingRecords(page)).toEqual([]);
 
+  // The UI server's key changes between the workspace read and the POST: GET /workspace answers
+  // workspace C, then the invoke arrives with THIS workspace's key, which serves the lineage. The
+  // server refuses it (Wynk-Expected-Workspace names C): nothing runs, nothing is spent.
+  const C = await freshWorkspace(request);
+  const cId = (await api(request, "GET", "workspace", undefined, C)).body.workspace.workspace_id as string;
+  const readAsC = await asWorkspace(page, C, (p) => p === "/api/v1/workspace");
+  const raced = posts(page, (path) => path === `/api/v1/deployments/${lineage}/invoke`);
+  const spentBefore = providerCalls(marker);
+  const shownBefore = await invoke.getByTestId("inference").getAttribute("data-inference-id");
+  const trailEnd = await auditEnd(request);
+  await runButton.click();
+  await expect(invoke.getByTestId("send-status")).toHaveAttribute("data-phase", "not_sent");
+  await expect(invoke.getByTestId("send-status")).toHaveAttribute("data-reason", "workspace_mismatch");
+  await page.waitForTimeout(1_000); // nothing resends on its own
+  expect(raced).toHaveLength(1); // one request left the browser…
+  expect(providerCalls(marker)).toBe(spentBefore); // …and the provider received nothing
+  expect(await pendingRecords(page)).toEqual([]); // it ran nowhere: no recovery record is kept
+  const refusals = (await auditSince(request, trailEnd)).filter((e) => e.action === "security.workspace_mismatch");
+  expect(refusals).toHaveLength(1); // recorded in the key's own workspace
+  expect(JSON.stringify(refusals)).not.toContain(cId);
+  await readAsC();
+  await runButton.click(); // the workspace read and the key agree again: it runs here
+  await expect(invoke.getByTestId("inference")).not.toHaveAttribute("data-inference-id", shownBefore!, { timeout: 30_000 });
+  await expect(invoke.getByTestId("inference-output")).toContainText("Lincoln");
+  expect(providerCalls(marker)).toBeGreaterThan(spentBefore);
+
   expect(mockCode).toEqual([]);
 });
 
@@ -645,6 +692,44 @@ for (const failure of NO_RECOVERY) {
     expect(jobs).toEqual([]); // …and the server has no experiment for it
   });
 }
+
+/*
+  The UI server's key changes between the workspace read and the create: the page reads workspace
+  A, then its POST reaches the real API with B's key. B holds the same dataset id, so without the
+  server's Wynk-Expected-Workspace check the experiment would be created in B.
+*/
+test("live: the key changes between the workspace read and the create: the server refuses it, zero experiments anywhere", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  const datasetId = `desk-${unique()}`;
+  const A = await freshWorkspace(request);
+  const B = await freshWorkspace(request);
+  const aId = (await api(request, "GET", "workspace", undefined, A)).body.workspace.workspace_id as string;
+  const { pid } = await orderDesk(request, A, datasetId);
+  await orderDesk(request, B, datasetId);
+  await asWorkspace(page, A); // the page reads A…
+  const backToA = await asWorkspace(page, B, (p) => p === "/api/v1/experiments"); // …and the create goes out with B's key
+  const creates: string[] = [];
+  page.on("request", (r) => {
+    if (r.method() === "POST" && new URL(r.url()).pathname === "/api/v1/experiments") creates.push(r.headers()["wynk-expected-workspace"] ?? "");
+  });
+  await (await configure(page, request, pid, datasetId, "e2e-desk", "raced")).click();
+  const status = page.getByTestId("send-status");
+  await expect(status).toHaveAttribute("data-phase", "not_sent");
+  await expect(status).toHaveAttribute("data-reason", "workspace_mismatch");
+  await page.waitForTimeout(1_500); // longer than the first retry backoff: nothing resends on its own
+  expect(creates).toEqual([aId]); // one POST, which named the workspace the page showed
+  expect(await jobsOf(request, datasetId, A)).toEqual([]);
+  expect(await jobsOf(request, datasetId, B)).toEqual([]); // zero cross-workspace writes
+  expect(await pendingRecords(page)).toEqual([]); // it ran nowhere: no recovery record is kept
+  const refusals = (await auditSince(request, 0, B)).filter((e) => e.action === "security.workspace_mismatch");
+  expect(refusals).toHaveLength(1);
+  expect(JSON.stringify(refusals)).not.toContain(aId);
+  await backToA();
+  await page.getByRole("button", { name: "Create experiment" }).click(); // the key and the read agree again
+  await expect(page).toHaveURL(new RegExp(`/projects/${pid}/experiments/j-[0-9a-f]+$`), { timeout: 20_000 });
+  expect(await jobsOf(request, datasetId, A)).toHaveLength(1);
+  expect(await jobsOf(request, datasetId, B)).toEqual([]);
+});
 
 /*
   A POST the server ran, whose answer the browser could not use: the outcome is unresolved, the

@@ -107,6 +107,30 @@ unauthenticated caller can't even probe routes.
 The existing product routes keep their paths and are scoped to the key's workspace. There's
 no `/workspaces/{id}/...` duplicate family.
 
+### Expected workspace (`Wynk-Expected-Workspace`)
+
+A client that reads `GET /workspace` and then sends a mutation can lose a race: the key behind
+it (a UI server's proxy key, say) can change to another workspace between the two. Any request
+can carry `Wynk-Expected-Workspace: <workspace_id>`, the workspace the client believes it acts
+in. It is a precondition only, never authorization:
+
+* The key's workspace is the only authority. The header never selects, widens or grants
+  anything; a value that names another workspace only refuses the request.
+* It is checked right after authentication (`api/tenancy.py`), before the scope check, the
+  admin routes, the body, the idempotency claim, the quota and every side effect. A mismatch is
+  `412 workspace_mismatch` (`details.field = "Wynk-Expected-Workspace"`): nothing is written, no
+  inference runs, no provider request is sent, and an `Idempotency-Key` is not claimed.
+* The refusal is recorded best-effort as `security.workspace_mismatch` in the KEY's workspace
+  (the route only; never the expected id, the key or the idempotency key).
+* A malformed value or more than one header is `400 invalid_request`. A client that omits the
+  header behaves as before.
+
+The live UI sends the header with every experiment create and every invocation, with the
+workspace it read for that send. A fresh `412` is a definite "not sent"; after an uncertain
+earlier attempt with the same key, a `412` says nothing about that attempt, so the request
+stays unresolved with its key (`ui/src/lib/idempotency.ts`).
+Tests: `tests/test_workspace_precondition.py`, the `ui/e2e/live.spec.ts` race tests.
+
 ## 6. #30 / #31 principals
 
 Inference records and feedback gain `authenticated_principal` = `{workspace_id, user_id,

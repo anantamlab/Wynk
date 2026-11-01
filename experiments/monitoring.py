@@ -82,7 +82,9 @@ from experiments.jobs import (
     load_canonical,
 )
 from experiments.optimization_experiment import Strategy
+from ingestion.sensitive import ServerMinted
 from ingestion.service import DatasetService, NotFound, RegisterDataset
+from store.crypto import BlobCipher, DecryptionError, NotEncrypted, UnknownKey
 from store.datasets import Conflict, RowIdSource, SplitsRecord
 from store.monitoring import (
     DecisionRow,
@@ -429,6 +431,10 @@ class ProductionMonitor:
     lease_s: float = 600.0
     clock: Callable[[], float] = time.time  # leases only
     now: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))  # default window end
+    # the workspace data key: a feedback's inputs, output and expected answer are stored
+    # sealed under it (``feedback_payloads``), never in the feedback record itself.
+    # ``None``: a process without a keyring stores them inline, as before sealing.
+    payloads: BlobCipher | None = None
 
     # -- policies ---------------------------------------------------------------------------
     def register_policy(self, policy: MonitoringPolicy) -> tuple[MonitoringPolicy, str, bool]:
@@ -597,6 +603,11 @@ class ProductionMonitor:
             # untrusted metadata above, and part of no identity or decision
             "authenticated_principal": dict(principal) if principal is not None else None,
         }
+        sealed = None
+        if self.payloads is not None:  # the row data leaves the record: only its hash stays
+            payload = {k: body.pop(k) for k in _PAYLOAD}
+            body["payload_sha256"] = sha = canonical_hash(payload)
+            sealed = (sha, self.payloads.seal(canonical_json(payload).encode("ascii"), sha))
         try:
             stored, created = self.store.put_feedback(
                 FeedbackRow(
@@ -608,7 +619,8 @@ class ProductionMonitor:
                     inference_created_at=row.created_at,
                     record_json=canonical_json(body),
                     received_at=self.store.clock(),
-                )
+                ),
+                sealed,
             )
         except FeedbackConflict as exc:
             raise FeedbackAlreadyRecorded(str(exc), inference_id=inference_id) from None
@@ -620,6 +632,42 @@ class ProductionMonitor:
             raise FeedbackNotFound(f"no feedback {feedback_id}")
         return _feedback_view(row)
 
+    def _open_feedback(self, row: FeedbackRow) -> dict[str, Any]:
+        """The full feedback record: a sealed payload is opened (AES-GCM, bound to this
+        workspace and the payload hash the record names) and re-hashed; a record from before
+        sealing carries its payload inline. Anything else is refused, never repaired."""
+        body = json.loads(row.record_json)
+        sha = body.pop("payload_sha256", None)
+        if sha is None:
+            return body
+        stored = self.store.feedback_payload(row.feedback_id)
+        if stored is None or stored[0] != sha or self.payloads is None:
+            raise MonitoringIntegrityError(f"the payload of feedback {row.feedback_id} is missing")
+        try:
+            payload = json.loads(self.payloads.open(stored[1], sha))
+        except (DecryptionError, NotEncrypted, UnknownKey):
+            raise MonitoringIntegrityError(
+                f"the payload of feedback {row.feedback_id} cannot be opened"
+            ) from None
+        if not isinstance(payload, dict) or set(payload) != set(_PAYLOAD):
+            raise MonitoringIntegrityError(f"the payload of feedback {row.feedback_id} is invalid")
+        if canonical_hash(payload) != sha:
+            raise MonitoringIntegrityError(f"the payload of feedback {row.feedback_id} is invalid")
+        return body | payload
+
+    def rekey_feedback(self) -> int:
+        """``secure-data`` key rotation: re-seal every feedback payload under the active key."""
+        if self.payloads is None:
+            return 0
+        sealer = self.payloads
+
+        def reseal(sha: str, envelope: bytes) -> bytes | None:
+            if BlobCipher.key_id_of(envelope) == sealer.keyring.active_id:
+                return None
+            return sealer.seal(sealer.open(envelope, sha), sha)
+
+        return self.store.rekey_feedback(reseal)
+
     def _feedback_in(
         self, ctx: _Context, records: Sequence[Mapping[str, Any]]
     ) -> list[dict[str, Any]]:
@@ -628,7 +676,7 @@ class ProductionMonitor:
         for row in self.store.feedback_for_version(ctx.version_id):
             if row.inference_id not in ids:
                 continue
-            body = json.loads(row.record_json)
+            body = self._open_feedback(row)
             if body["workflow_version"] != ctx.version_id or body["feedback_id"] != row.feedback_id:
                 raise MonitoringIntegrityError(f"feedback {row.feedback_id} is inconsistent")
             out.append(body)
@@ -1180,7 +1228,7 @@ class ProductionMonitor:
             return canonical_hash({n: values[n] for n in inputs if values.get(n) is not None})
 
         existing = {key(row) for _, row in rows}
-        examples = [json.loads(self._feedback_row(fid).record_json) for fid in sorted(frozen)]
+        examples = [self._open_feedback(self._feedback_row(fid)) for fid in sorted(frozen)]
         excluded: dict[str, str] = {}
         by_input: dict[str, list[dict[str, Any]]] = {}
         for fb in examples:
@@ -1219,8 +1267,21 @@ class ProductionMonitor:
                 new[ds.id_column] = fb["feedback_id"]
             lines.append(json.dumps({c: new[c] for c in columns}, ensure_ascii=False))
         payload = ("\n".join(lines) + "\n").encode()
+        # the new rows' ids are the server's own feedback ids and the filename holds the
+        # trigger id: hashes, not user data, though their hex can look like a card number.
+        # Exactly these are exempt; every user value (parent rows, inputs, labels) is screened.
+        minted = ServerMinted(
+            cells={}
+            if ds.id_column is None
+            else {ds.id_column: frozenset(fb["feedback_id"] for fb in kept)},
+            filename_tokens=frozenset({trigger_id}),
+        )
         upload, _ = self.datasets.upload(
-            parent.project_id, payload, "jsonl", filename=f"{ds.dataset_id}-{trigger_id}.jsonl"
+            parent.project_id,
+            payload,
+            "jsonl",
+            filename=f"{ds.dataset_id}-{trigger_id}.jsonl",
+            minted=minted,
         )
         record, _ = self.datasets.register(
             upload.upload_id,
@@ -1233,6 +1294,7 @@ class ProductionMonitor:
                 row_ids="column" if parent.row_id_source is RowIdSource.COLUMN else "generated",
                 id_column=ds.id_column,
             ),
+            minted=minted,
         )
         new_spec = record.spec
         if record.dataset_version <= parent.dataset_version:
@@ -1608,6 +1670,10 @@ def _fire(
 def _challenger_job_id(trigger_id: str) -> str:
     """A trigger's ONE challenger job id: deterministic, so a retry never duplicates it."""
     return "j-" + canonical_hash({"trigger_id": trigger_id, "job": 1})[:24]
+
+
+# the row data of a feedback: sealed under the workspace key when a keyring is configured
+_PAYLOAD = ("inputs", "output", "expected")
 
 
 def _feedback_view(row: FeedbackRow) -> FeedbackView:

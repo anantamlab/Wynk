@@ -79,6 +79,12 @@ const NOT_SENT: Record<NotSentState["reason"], { title: string; text: (noun: str
       `The UI server's API key now belongs to another workspace than the unconfirmed ${noun}. Wynk neither resends nor replaces that ${noun} here, so nothing was sent. Its recovery record stays: restore the original API key and submit the same values to recover it with its key. A new request in this workspace uses a new key and may run the ${noun} a second time.`,
     newKey: true,
   },
+  workspace_mismatch: {
+    title: "Not sent: the API key changed to another workspace",
+    text: (noun) =>
+      `Wynk read the workspace, then the UI server's API key changed to another workspace before the ${noun} arrived. The server refused it before it ran: no workspace received it and nothing was spent. Reload the page to see the current workspace, then submit again if you still want to.`,
+    newKey: false,
+  },
 };
 
 function NotSent({ state, noun, onNewKey }: { state: NotSentState; noun: string; onNewKey: () => void }) {

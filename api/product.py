@@ -276,6 +276,7 @@ ERROR_STATUS: dict[str, int] = {
     # -- #32 authentication / workspaces / tenancy --
     "unauthenticated": 401,
     "insufficient_scope": 403,
+    "workspace_mismatch": 412,
     "workspace_not_found": 404,
     "member_not_found": 404,
     "api_key_not_found": 404,
@@ -1360,11 +1361,28 @@ def _linger(handler: BaseHTTPRequestHandler, unread: int | None) -> None:
         return
 
 
+# A header that must appear at most once: ``dict(headers.items())`` keeps only its LAST copy, so
+# a repeated one would pass the routers' duplicate checks unseen. Its copies are joined instead
+# (RFC 9110 field-line combination), which those checks then refuse as malformed.
+_SINGLE_VALUED = ("authorization", "wynk-expected-workspace")
+
+
+def _single_valued(handler: BaseHTTPRequestHandler) -> dict[str, str]:
+    merged = dict(handler.headers.items())
+    for name in _SINGLE_VALUED:
+        copies = handler.headers.get_all(name) or []
+        if len(copies) > 1:
+            for k in [k for k in merged if k.lower() == name]:
+                del merged[k]
+            merged[name] = ", ".join(copies)
+    return merged
+
+
 def respond(handler: BaseHTTPRequestHandler, api: ProductAPI) -> None:
     """Serve one product API request on a stdlib handler (used here and by ``api.chat``)."""
     headers = {k.lower(): v for k, v in handler.headers.items()}
     body = _CountingReader(handler.rfile)
-    res = api.handle(handler.command, handler.path, dict(handler.headers.items()), body)  # type: ignore[arg-type]
+    res = api.handle(handler.command, handler.path, _single_valued(handler), body)  # type: ignore[arg-type]
     if res.raw is not None:  # a download (#33 export): exactly these bytes
         data = res.raw
     else:

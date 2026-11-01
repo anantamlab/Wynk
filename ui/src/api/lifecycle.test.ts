@@ -97,6 +97,26 @@ describe("live adapter: lifecycle requests", () => {
     ]);
   });
 
+  it("sends the workspace it was given as Wynk-Expected-Workspace, and only then", async () => {
+    const { l, calls } = live({
+      [`POST ${P}/experiments`]: [recorded("create_experiment"), recorded("create_experiment")],
+      [`POST ${P}/deployments/${LINEAGE}/invoke`]: [recorded("invoke_production"), recorded("error_workspace_mismatch")],
+    });
+    const body = { dataset_id: "d" } as unknown as decode.CreateExperimentWire;
+    await l.createJob(body, "exp-1", "ws-alpha");
+    await l.createJob(body, "exp-2");
+    await l.invoke({ lineage: LINEAGE }, {}, "inf-1", "ws-alpha");
+    // the server's refusal when the key belongs to another workspace (recorded from api/tenancy.py)
+    await expect(l.invoke({ lineage: LINEAGE }, {}, "inf-2", "ws-alpha")).rejects.toMatchObject({
+      code: "workspace_mismatch",
+      status: 412,
+      fromServer: true,
+      kind: "conflict",
+    });
+    expect(calls.map((c) => c.headers.get("Wynk-Expected-Workspace"))).toEqual(["ws-alpha", null, "ws-alpha", "ws-alpha"]);
+    expect(calls.every((c) => c.headers.get("Authorization") === null)).toBe(true); // a precondition, never a credential
+  });
+
   it("fences every deployment move with the revision it was given", async () => {
     const { l, calls } = live({
       [`POST ${P}/workflows/${VERSION}/stage`]: recorded("stage_workflow"),

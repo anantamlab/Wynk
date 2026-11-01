@@ -9,6 +9,7 @@ const CLIENT = new Set(["network_error", "bad_response", "contract_mismatch", "r
 const STATUS: Record<string, number> = { unauthenticated: 401, insufficient_scope: 403, deployment_not_found: 404, quota_exceeded: 429, inference_failed: 502 };
 STATUS.storage_error = STATUS.internal_error = 500;
 STATUS.inference_backend_unavailable = 503;
+STATUS.workspace_mismatch = 412;
 for (const c of ["inference_ambiguous_attempt", "ambiguous_attempt", "inference_deployment_changed", "idempotency_conflict", "inference_in_progress"]) STATUS[c] = 409;
 const err = (code: string, details: Record<string, string | number | null> = {}) =>
   CLIENT.has(code)
@@ -594,6 +595,44 @@ describe("useIdempotentSend fails closed without a durable recovery record", () 
       await a;
     });
     expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  describe("the server-enforced workspace precondition (Wynk-Expected-Workspace)", () => {
+    it("every send gets the workspace read just before it, for submit, retry and a new key", async () => {
+      let ws = "ws-alpha";
+      const hook = mount(persist(async () => ws));
+      const seen: [string, string][] = [];
+      const send = vi.fn<(key: string, workspace: string) => Promise<Sent<{ id: string }>>>(async (key, workspace) => {
+        seen.push([key, workspace]);
+        if (seen.length === 1) throw err("network_error");
+        return done({ id: "r-1" }, true);
+      });
+      await act(() => hook.result.current.submit(BODY, send));
+      await act(() => hook.result.current.retry());
+      expect(seen.map(([, w]) => w)).toEqual(["ws-alpha", "ws-alpha"]);
+      ws = "ws-beta";
+      await act(() => hook.result.current.sendWithNewKey(BODY, send));
+      expect(seen[2][1]).toBe("ws-beta");
+    });
+
+    it("a 412 workspace_mismatch on a fresh request: not_sent, nothing ran anywhere, the record is cleared", async () => {
+      const hook = mount(persist(async () => "ws-alpha"));
+      const { send, keys } = script("workspace_mismatch");
+      await act(() => hook.result.current.submit(BODY, send));
+      expect(keys).toHaveLength(1); // never resent automatically
+      expect(hook.result.current.state).toMatchObject({ phase: "not_sent", reason: "workspace_mismatch" });
+      expect(readPending("ws-alpha", OP)).toBeNull();
+    });
+
+    it("a 412 after an attempt that may have run says nothing about it: it stays unresolved with its key", async () => {
+      const hook = mount(persist(async () => "ws-alpha"));
+      const { send, keys } = script("network_error", "workspace_mismatch");
+      await act(() => hook.result.current.submit(BODY, send));
+      await act(() => hook.result.current.retry());
+      expect(keys).toEqual([keys[0], keys[0]]);
+      expect(hook.result.current.state).toMatchObject({ phase: "settled", kind: "unresolved" });
+      expect(readPending("ws-alpha", OP)).toMatchObject({ key: keys[0], outcome: "unresolved" });
+    });
   });
 
   describe("a workspace change (the UI server's key now belongs to workspace B)", () => {

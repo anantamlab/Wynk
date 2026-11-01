@@ -144,7 +144,7 @@ export function LiveConfigurePage() {
   );
 
   // each submission keeps the body of its own render; `retry()` resends that original body
-  const create = (key: string) => lifecycle().createJob(body!, key);
+  const create = (key: string, workspace: string) => lifecycle().createJob(body!, key, workspace);
   const finish = (outcome: Awaited<ReturnType<typeof send.submit>>) => {
     if (outcome?.kind === "done") navigate(`../${outcome.value.job_id}`, { relative: "path", state: { replayed: outcome.replayed } });
   };

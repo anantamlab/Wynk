@@ -126,6 +126,12 @@ def capture(tmp_path: Path) -> dict[str, Any]:
         )
         err("error_invalid_inference_request", "POST", invoke[0], {"inputs": {"question": 1}})
         ok("current_workspace", "GET", "workspace")
+        err(  # the key changed between the workspace read and the mutation (api/tenancy.py)
+            "error_workspace_mismatch",
+            "POST",
+            *invoke,
+            **{"Idempotency-Key": "fixture-key-2", "Wynk-Expected-Workspace": "ws-another"},
+        )
         ok("get_quota", "GET", "workspace/quota")
         out["new_order"] = NEW_ORDER
         assert PROVIDER_KEY not in json.dumps(out)
