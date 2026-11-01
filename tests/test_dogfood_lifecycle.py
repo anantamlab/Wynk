@@ -19,33 +19,29 @@ from typing import Any
 import pytest
 
 from experiments.provenance import differences, scientific
-from runtime.prompts import PROMPT_TEMPLATE_VERSION
 from store.audit import SQLiteAuditLog
 from tests.dogfood_support import (
     DATASET_ID,
     FIXTURE,
-    INSTRUCTIONS,
     LINEAGE,
+    NEW_ORDER,
     PROVIDER_KEY,
     REGISTER,
     SPLIT_PLAN,
-    TASK_ID,
     FakeProvider,
     call,
     code,
+    contract_for,
     entry_for,
     files_under,
+    order_ids,
+    plan_for,
     product,
+    rows_of,
     write_registry,
 )
 
 pytest.importorskip("agent_framework")  # the real runtime executes workflows with MAF
-
-NEW_ORDER = {
-    "question": "Which city does order ORD-2001 ship to?",
-    "order_record": "Order ORD-2001 (1 x tarp) was packed at the Reno warehouse and ships to "
-    "Lincoln by Ground on 2026-04-01.",
-}
 
 
 # -- harness ----------------------------------------------------------------------------------
@@ -124,53 +120,6 @@ class World:
         self.ok(key, "POST", f"workflows/{version_id}/stage", {"expected_revision": rev})
         self.ok(key, "POST", f"workflows/{version_id}/promote", {"expected_revision": rev + 1})
         return rev + 2
-
-
-def contract_for(spec: dict[str, Any], **overrides: Any) -> dict[str, Any]:
-    """The TaskContract a user writes for the registered dataset version."""
-    return {
-        "task_id": TASK_ID,
-        "contract_version": 1,
-        "task_type": "question_answering",
-        "instructions": INSTRUCTIONS,
-        "input_schema": {
-            "fields": [
-                {"name": "question", "type": "string"},
-                {"name": "order_record", "type": "string"},
-            ]
-        },
-        "output_schema": {"fields": [{"name": "answer", "type": "string"}]},
-        "dataset": spec,
-        "evaluation": {"evaluator": "exact_match", "config": {"case_sensitive": False}},
-        "constraints": {
-            "maximum_tokens_per_example": 20_000,
-            "maximum_wall_time_s": 120.0,
-            "maximum_tool_calls": 20,
-            "maximum_retries": 2,
-            "maximum_model_calls": 4,
-        },
-        **overrides,
-    }
-
-
-def plan_for(entry: Any, strategies=("fixed", "random", "aco")) -> dict[str, Any]:
-    return {
-        "model": {"provider": entry.provider, "model": entry.model_id},
-        "expected_model_hash": entry.model_hash,
-        "expected_prompt_version": PROMPT_TEMPLATE_VERSION,
-        "budget": {"max_candidate_evaluations": 4},
-        "seeds": [0],
-        "strategies": list(strategies),
-    }
-
-
-def rows_of(role: str, splits: dict[str, Any]) -> list[str]:
-    return [s for x in splits["splits"]["splits"] if x["role"] == role for s in x["row_ids"]]
-
-
-def order_ids(row_ids: list[str]) -> set[str]:
-    """Order ids of fixture rows (T-0007 -> ORD-1007): how a prompt names its row."""
-    return {f"ORD-1{r[-3:]}" for r in row_ids}
 
 
 def prompts_about(provider: FakeProvider, orders: set[str], since: int = 0) -> list[str]:
