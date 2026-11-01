@@ -633,6 +633,26 @@ test("live: experiment → results → promotion → publish → stage → produ
   await expect(invoke.getByTestId("inference-output")).toContainText("Lincoln");
   expect(providerCalls(marker)).toBeGreaterThan(spentBefore);
 
+  // F2 outbound policy: a new workspace refuses a payment card before any model request. The
+  // refusal names the category and the field, never the value; the provider receives nothing.
+  const CARD = "4111 1111 1111 1111"; // the well-known Visa test number, synthetic
+  const cardBefore = providerCalls(marker);
+  const blockedTrail = await auditEnd(request);
+  await invoke.getByRole("textbox", { name: /^question/ }).fill(`${NEW_ORDER.question} Card ${CARD}.`);
+  await runButton.click();
+  const blocked = invoke.getByTestId("send-status");
+  await expect(blocked).toHaveAttribute("data-phase", "refused");
+  await expect(blocked.getByTestId("error-code")).toHaveText("outbound_data_blocked");
+  await expect(blocked).toContainText("data policy blocks");
+  await expect(blocked).not.toContainText(CARD);
+  await page.waitForTimeout(1_000); // nothing resends on its own
+  expect(providerCalls(marker)).toBe(cardBefore);
+  expect(await pendingRecords(page)).toEqual([]);
+  const outbound = (await auditSince(request, blockedTrail)).filter((e) => e.action === "security.outbound_blocked");
+  expect(outbound).toHaveLength(1);
+  expect(outbound[0].details).toMatchObject({ categories: "payment_card", fields: "question" });
+  expect(JSON.stringify(outbound)).not.toContain(CARD);
+
   expect(mockCode).toEqual([]);
 });
 

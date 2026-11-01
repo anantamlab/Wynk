@@ -30,6 +30,12 @@ Records
     reoptimizations      per TRIGGERED decision: the fenced claim and the forward-only progress
                          CLAIMED -> DATASET_CREATED -> JOB_CREATED (or FAILED), with the new
                          dataset version, splits and challenger job it produced.
+    feedback_erasures    Phase 5: one immutable record per erased feedback payload (the request,
+                         reason, actor ids and the copies it could not reach). The payload's
+                         envelope is then the fixed ``ERASED`` tombstone, in the SAME
+                         transaction; triggers allow that one change only with its record, and
+                         an erased payload can never be replaced again. The feedback row itself
+                         (ids, hashes, evaluation) stays: it is the minimal evidence.
 """
 
 from __future__ import annotations
@@ -88,6 +94,14 @@ class FeedbackRow:
 
 
 @dataclass(frozen=True)
+class ErasureRow:
+    feedback_id: str
+    payload_sha256: str
+    erasure_json: str
+    erased_at: str
+
+
+@dataclass(frozen=True)
 class DecisionRow:
     trigger_id: str
     workflow_version: str
@@ -116,6 +130,10 @@ class ReoptRow:
 
 
 SCHEMA_VERSION = 1
+# The envelope of an erased feedback payload: no key opens it (format byte 0 is not an envelope
+# format), it keeps the ``WYNKBLOB`` prefix the sealing triggers require, and it holds nothing.
+ERASED = b"WYNKBLOB\x00erased/1"
+_ERASED_SQL = f"X'{ERASED.hex()}'"
 _REOPT_TRANSITIONS = (
     "CLAIMED>CLAIMED",  # a re-claim (fence bump) of an unfinished re-optimization
     "CLAIMED>DATASET_CREATED",
@@ -205,6 +223,35 @@ SCHEMA: tuple[str, ...] = (
     """CREATE TRIGGER IF NOT EXISTS feedback_payloads_are_permanent
     BEFORE DELETE ON feedback_payloads
     BEGIN SELECT RAISE(ABORT, 'feedback is immutable'); END""",
+    # -- Phase 5 erasure: additive triggers (the ones above are unchanged) ----------------------
+    """CREATE TABLE IF NOT EXISTS feedback_erasures (
+        feedback_id    TEXT PRIMARY KEY REFERENCES feedback(feedback_id),
+        payload_sha256 TEXT NOT NULL,           -- the erased payload's hash: kept as evidence
+        erasure_json   TEXT NOT NULL,           -- request, reason, actor ids, residual copies
+        erased_at      TEXT NOT NULL
+    )""",
+    """CREATE TRIGGER IF NOT EXISTS feedback_erasures_are_immutable
+    BEFORE UPDATE ON feedback_erasures
+    BEGIN SELECT RAISE(ABORT, 'feedback erasures are immutable'); END""",
+    """CREATE TRIGGER IF NOT EXISTS feedback_erasures_are_permanent
+    BEFORE DELETE ON feedback_erasures
+    BEGIN SELECT RAISE(ABORT, 'feedback erasures are immutable'); END""",
+    f"""CREATE TRIGGER IF NOT EXISTS feedback_payloads_erased_only_on_record
+    BEFORE UPDATE ON feedback_payloads
+    WHEN NEW.envelope = {_ERASED_SQL} AND NOT EXISTS (
+        SELECT 1 FROM feedback_erasures e
+        WHERE e.feedback_id = NEW.feedback_id AND e.payload_sha256 = NEW.payload_sha256)
+    BEGIN SELECT RAISE(ABORT, 'a feedback payload is erased only with its erasure record'); END""",
+    f"""CREATE TRIGGER IF NOT EXISTS feedback_payloads_stay_erased
+    BEFORE UPDATE ON feedback_payloads
+    WHEN OLD.envelope = {_ERASED_SQL}
+    BEGIN SELECT RAISE(ABORT, 'an erased feedback payload stays erased'); END""",
+    f"""CREATE TRIGGER IF NOT EXISTS feedback_payloads_inserted_erased_only_on_record
+    BEFORE INSERT ON feedback_payloads
+    WHEN NEW.envelope = {_ERASED_SQL} AND NOT EXISTS (
+        SELECT 1 FROM feedback_erasures e
+        WHERE e.feedback_id = NEW.feedback_id AND e.payload_sha256 = NEW.payload_sha256)
+    BEGIN SELECT RAISE(ABORT, 'a feedback payload is erased only with its erasure record'); END""",
     """CREATE TRIGGER IF NOT EXISTS trigger_decisions_are_immutable
     BEFORE UPDATE ON trigger_decisions
     BEGIN SELECT RAISE(ABORT, 'trigger decisions are immutable'); END""",
@@ -243,6 +290,7 @@ _REOPT_COLS = (
     "trigger_id, state, owner, fence, lease_until, dataset_id, dataset_version, splits_hash, "
     "job_id, detail, created_at, updated_at"
 )
+_ERASURE_COLS = "feedback_id, payload_sha256, erasure_json, erased_at"
 
 
 class SQLiteMonitoringStore:
@@ -404,7 +452,9 @@ class SQLiteMonitoringStore:
         so a concurrent rotation never loses one. Returns how many were re-keyed."""
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT feedback_id, payload_sha256, envelope FROM feedback_payloads"
+                "SELECT feedback_id, payload_sha256, envelope FROM feedback_payloads "
+                "WHERE envelope != ?",  # an erased payload has nothing left to re-key
+                (ERASED,),
             )
             stored = [(r[0], r[1], bytes(r[2])) for r in rows]
         moved = 0
@@ -421,6 +471,97 @@ class SQLiteMonitoringStore:
             ):
                 moved += 1
         return moved
+
+    def all_feedback(self) -> list[FeedbackRow]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT {_FEEDBACK_COLS} FROM feedback ORDER BY received_at, feedback_id"
+            ).fetchall()
+        return [_feedback(r) for r in rows]
+
+    # -- erasure (Phase 5) -----------------------------------------------------------------
+    def erase_payload(
+        self,
+        feedback_id: str,
+        payload_sha256: str,
+        erasure_json: str,
+        *,
+        frozen_trigger: str | None,
+    ) -> tuple[ErasureRow, bool]:
+        """Record the erasure and replace the sealed envelope with ``ERASED`` - one
+        ``BEGIN IMMEDIATE`` transaction, so a crash leaves either both or neither. Idempotent:
+        an already erased payload returns its stored record (``bool`` False). The connection
+        runs with ``secure_delete`` so the replaced envelope's bytes are zeroed in the page.
+        ``frozen_trigger`` is what the caller checked; a freeze since then raises ``Conflict``
+        (the dependents it judged are no longer the dependents)."""
+        now = self.clock()
+
+        def erase(c: _Conn) -> tuple[ErasureRow, bool]:
+            existing = c.execute(
+                f"SELECT {_ERASURE_COLS} FROM feedback_erasures WHERE feedback_id=?",
+                (feedback_id,),
+            ).fetchone()
+            if existing is not None:
+                return ErasureRow(*existing), False
+            stored = c.execute(
+                "SELECT payload_sha256 FROM feedback_payloads WHERE feedback_id=?", (feedback_id,)
+            ).fetchone()
+            if stored is None or stored[0] != payload_sha256:
+                raise RepositoryError(f"feedback {feedback_id} has no sealed payload to erase")
+            frozen = c.execute(
+                "SELECT trigger_id FROM frozen_examples WHERE feedback_id=?", (feedback_id,)
+            ).fetchone()
+            if (frozen[0] if frozen is not None else None) != frozen_trigger:
+                raise Conflict(f"feedback {feedback_id} was frozen while it was being erased")
+            c.execute(
+                f"INSERT INTO feedback_erasures({_ERASURE_COLS}) VALUES (?,?,?,?)",
+                (feedback_id, payload_sha256, erasure_json, now),
+            )
+            changed = c.execute(
+                "UPDATE feedback_payloads SET envelope=? WHERE feedback_id=? AND payload_sha256=?",
+                (ERASED, feedback_id, payload_sha256),
+            ).rowcount
+            if changed != 1:
+                raise RepositoryError(f"feedback {feedback_id}'s payload changed while erasing")
+            return ErasureRow(feedback_id, payload_sha256, erasure_json, now), True
+
+        with self._connect() as conn:
+            conn.execute("PRAGMA secure_delete=ON")
+            out = self._write(conn, erase)
+        if out[1]:
+            self.checkpoint()
+        return out
+
+    def checkpoint(self) -> bool:
+        """Copy the WAL into the database file and truncate it, so a replaced envelope's old
+        page does not stay in ``-wal``. Best effort: ``False`` when a reader held the WAL; the
+        old page then stays there until a later checkpoint copies over it."""
+        with self._connect() as conn:
+            busy, _, _ = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        return busy == 0
+
+    def erasure(self, feedback_id: str) -> ErasureRow | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                f"SELECT {_ERASURE_COLS} FROM feedback_erasures WHERE feedback_id=?",
+                (feedback_id,),
+            ).fetchone()
+        return ErasureRow(*row) if row is not None else None
+
+    def erasures(self) -> list[ErasureRow]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT {_ERASURE_COLS} FROM feedback_erasures ORDER BY erased_at, feedback_id"
+            ).fetchall()
+        return [ErasureRow(*r) for r in rows]
+
+    def frozen_trigger(self, feedback_id: str) -> str | None:
+        """The TRIGGERED decision that froze this feedback into a dataset version, if any."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT trigger_id FROM frozen_examples WHERE feedback_id=?", (feedback_id,)
+            ).fetchone()
+        return row[0] if row is not None else None
 
     def feedback_for_version(self, workflow_version: str) -> list[FeedbackRow]:
         """Every feedback citing an inference of exactly ``workflow_version``."""
@@ -644,7 +785,9 @@ def _reopt(r: tuple[Any, ...]) -> ReoptRow:
 
 
 __all__ = [
+    "ERASED",
     "DecisionRow",
+    "ErasureRow",
     "FeedbackConflict",
     "FeedbackRow",
     "PolicyRow",

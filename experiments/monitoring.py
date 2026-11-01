@@ -39,15 +39,16 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import secrets
 import time
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt
+from pydantic import BaseModel, ConfigDict, Field, PositiveInt, field_validator
 
 from core.canonical import canonical_hash, canonical_json
 from core.dataset import (
@@ -71,6 +72,7 @@ from experiments.deployment import (
     ChampionDeployments,
     InferenceNotFound,
     InvalidInferenceRequest,
+    OutboundDataBlocked,
     check_document,
     validate_inputs,
 )
@@ -82,12 +84,16 @@ from experiments.jobs import (
     load_canonical,
 )
 from experiments.optimization_experiment import Strategy
-from ingestion.sensitive import ServerMinted
+from ingestion.sensitive import RULES as SENSITIVE_RULES
+from ingestion.sensitive import Kind, ServerMinted
+from ingestion.sensitive import find as find_sensitive
 from ingestion.service import DatasetService, NotFound, RegisterDataset
 from store.crypto import BlobCipher, DecryptionError, NotEncrypted, UnknownKey
 from store.datasets import Conflict, RowIdSource, SplitsRecord
 from store.monitoring import (
+    ERASED,
     DecisionRow,
+    ErasureRow,
     FeedbackConflict,
     FeedbackRow,
     ReoptRow,
@@ -103,6 +109,19 @@ SUMMARY_SCHEMA = "wynk-monitoring-summary/1"
 DRIFT_SCHEMA = "wynk-drift-report/1"
 DECISION_SCHEMA = "wynk-trigger-decision/1"
 REOPT_SCHEMA = "wynk-reoptimization/1"
+ERASURE_SCHEMA = "wynk-feedback-erasure/1"
+# what an erasure keeps: identifiers, hashes and the deterministic evaluation (no target values)
+ERASURE_KEPT = (
+    "feedback_id",
+    "inference_id",
+    "workflow_version",
+    "lineage",
+    "labelled",
+    "evaluation",
+    "payload_sha256",
+    "authenticated_principal",
+    "timestamps",
+)
 FAIR_STRATEGIES = (Strategy.FIXED, Strategy.RANDOM, Strategy.ACO)
 DAY_S = 86_400
 DIGITS = 6  # every reported statistic is rounded here: identical inputs, identical bytes
@@ -129,6 +148,27 @@ class FeedbackMismatch(MonitoringError):
 
 class FeedbackAlreadyRecorded(MonitoringError):
     code = "feedback_conflict"
+
+
+class FeedbackDataBlocked(MonitoringError):
+    """The workspace's outbound policy refuses a value of this feedback (F2): nothing stored."""
+
+    code = "outbound_data_blocked"
+
+
+class FeedbackNotSealed(MonitoringError):
+    """Erasure needs every caller-supplied value in the sealed payload; this record predates
+    that (``python -m api.tenancy migrate-feedback`` seals it, offline)."""
+
+    code = "feedback_not_sealed"
+
+
+class FeedbackInUse(MonitoringError):
+    """The feedback has dependents erasure cannot reach or cannot judge (a pending
+    re-optimization, or copies in a dataset version / challenger job / invocation output that
+    the request did not accept to keep). Nothing was changed."""
+
+    code = "feedback_in_use"
 
 
 class FeedbackNotFound(MonitoringError):
@@ -238,6 +278,32 @@ class MonitoringPolicy(_Strict):
         return "mp-" + canonical_hash(self.model_dump(mode="json"))[:24]
 
 
+# -- caller-supplied metadata (Phase 5) ---------------------------------------------------------
+# ``actor`` and ``source`` are opaque labels: a strict allowlist of printable characters (no
+# control characters, quotes, angle brackets or newlines: nothing that can forge a log line, a
+# CSV formula or markup), and never a credential. They are sealed with the payload, so contact
+# data in them (an actor email) is stored encrypted. The error names the rule, never the value.
+METADATA_KEY = re.compile(r"[a-z][a-z0-9_.-]{0,31}")
+METADATA_VALUE = re.compile(r"[A-Za-z0-9 ._@+:/#=,-]{0,200}")
+_FORMULA_START = ("=", "+", "-", "@")
+_RULE_KIND = {r.category: r.kind for r in SENSITIVE_RULES}
+
+
+def check_metadata_value(what: str, value: str) -> None:
+    if not METADATA_VALUE.fullmatch(value) or value != value.strip():
+        raise ValueError(
+            f"{what} holds characters outside the metadata allowlist (letters, digits, space "
+            "and . _ @ + : / # = , -; no leading or trailing space; at most 200)"
+        )
+    if value.startswith(_FORMULA_START):
+        raise ValueError(f"{what} must not start with = + - or @")
+    secrets_found = sorted(
+        {c.value for _, _, c in find_sensitive(value) if _RULE_KIND[c] is Kind.SECRET}
+    )
+    if secrets_found:
+        raise ValueError(f"{what} holds a credential ({','.join(secrets_found)})")
+
+
 # -- requests and views -------------------------------------------------------------------------
 class FeedbackRequest(_Strict):
     """Feedback on ONE inference record. ``inputs`` / ``output`` must be exactly what was sent
@@ -249,6 +315,30 @@ class FeedbackRequest(_Strict):
     expected: dict[str, Any] | None = None
     actor: str | None = Field(default=None, max_length=200)
     source: dict[str, str] = Field(default_factory=dict, max_length=20)
+
+    @field_validator("actor")
+    @classmethod
+    def _actor(cls, value: str | None) -> str | None:
+        if value is not None:
+            check_metadata_value("actor", value)
+        return value
+
+    @field_validator("source", mode="before")
+    @classmethod
+    def _source(cls, value: Any) -> Any:
+        # before type validation: a type error would name the caller's key in its location
+        if not isinstance(value, dict):
+            raise ValueError("source is an object of string values")
+        for key, item in value.items():
+            if not isinstance(key, str) or not METADATA_KEY.fullmatch(key):
+                raise ValueError(
+                    "source keys are 1-32 lowercase letters, digits, '_', '.' or '-', "
+                    "starting with a letter"
+                )
+            if not isinstance(item, str):
+                raise ValueError("source values are strings")
+            check_metadata_value("source value", item)
+        return value
 
 
 class FeedbackView(_Strict):
@@ -267,6 +357,25 @@ class FeedbackView(_Strict):
     # #32: the API key that submitted it, resolved by the server (workspace, user, key id);
     # ``None`` for in-process submissions and records written before #32
     authenticated_principal: dict[str, Any] | None = None
+    # Phase 5: the caller-supplied data (inputs, output, expected, metadata) was erased; the
+    # record, its hashes and its evaluation are the evidence that is kept
+    payload_erased: bool = False
+
+
+class FeedbackErasureView(_Strict):
+    record_schema: str
+    feedback_id: str
+    inference_id: str
+    reason: str
+    actor: dict[str, Any]
+    erased: list[str]  # the payload fields destroyed
+    kept: list[str]  # the minimal evidence that stays
+    payload_sha256: str  # kept: integrity evidence (a hash of low-entropy values is guessable)
+    residual_copies: list[dict[str, Any]]  # ids of copies erasure could not reach
+    residual_copies_accepted: bool
+    fully_erased: bool  # True only when no residual copy is known
+    erased_at: str
+    created: bool = False  # True only on the call that erased it
 
 
 class MonitoringSummary(_Strict):
@@ -561,12 +670,22 @@ class ProductionMonitor:
                 raise FeedbackMismatch("output is not the answer this inference returned")
         elif request.output is not None:
             raise FeedbackMismatch("this inference failed and returned no output")
-        evaluation = None
+        # F2: a label can become a challenger dataset row that a model provider receives, and the
+        # inputs can come from a request served before the workspace screened them
+        # Screened only after each fits its pinned schema: a refusal names schema fields, never
+        # a caller-chosen key.
         if request.expected is not None:
             problems = validate_answer(contract.output_schema, request.expected)
             if problems:
                 name = sorted(problems)[0]
                 raise InvalidFeedback(f"expected.{name}: {problems[name]}")
+        try:
+            self.deployments.check_outbound(values, prefix="inputs.")
+            self.deployments.check_outbound(request.expected or {}, prefix="expected.")
+        except OutboundDataBlocked as exc:
+            raise FeedbackDataBlocked(str(exc), **exc.details) from None
+        evaluation = None
+        if request.expected is not None:
             rec = evaluate_prediction(
                 contract.evaluation, contract.output_schema, request.expected, request.output
             )
@@ -604,8 +723,8 @@ class ProductionMonitor:
             "authenticated_principal": dict(principal) if principal is not None else None,
         }
         sealed = None
-        if self.payloads is not None:  # the row data leaves the record: only its hash stays
-            payload = {k: body.pop(k) for k in _PAYLOAD}
+        if self.payloads is not None:  # the row data AND the caller metadata leave the record
+            payload = {k: body.pop(k) for k in _PAYLOAD_V2}
             body["payload_sha256"] = sha = canonical_hash(payload)
             sealed = (sha, self.payloads.seal(canonical_json(payload).encode("ascii"), sha))
         try:
@@ -624,36 +743,26 @@ class ProductionMonitor:
             )
         except FeedbackConflict as exc:
             raise FeedbackAlreadyRecorded(str(exc), inference_id=inference_id) from None
-        return _feedback_view(stored), created
+        return self._view(stored), created
 
     def feedback(self, feedback_id: str) -> FeedbackView:
         row = self.store.feedback(feedback_id)
         if row is None:
             raise FeedbackNotFound(f"no feedback {feedback_id}")
-        return _feedback_view(row)
+        return self._view(row)
 
-    def _open_feedback(self, row: FeedbackRow) -> dict[str, Any]:
-        """The full feedback record: a sealed payload is opened (AES-GCM, bound to this
-        workspace and the payload hash the record names) and re-hashed; a record from before
-        sealing carries its payload inline. Anything else is refused, never repaired."""
-        body = json.loads(row.record_json)
-        sha = body.pop("payload_sha256", None)
-        if sha is None:
-            return body
-        stored = self.store.feedback_payload(row.feedback_id)
-        if stored is None or stored[0] != sha or self.payloads is None:
-            raise MonitoringIntegrityError(f"the payload of feedback {row.feedback_id} is missing")
-        try:
-            payload = json.loads(self.payloads.open(stored[1], sha))
-        except (DecryptionError, NotEncrypted, UnknownKey):
-            raise MonitoringIntegrityError(
-                f"the payload of feedback {row.feedback_id} cannot be opened"
-            ) from None
-        if not isinstance(payload, dict) or set(payload) != set(_PAYLOAD):
-            raise MonitoringIntegrityError(f"the payload of feedback {row.feedback_id} is invalid")
-        if canonical_hash(payload) != sha:
-            raise MonitoringIntegrityError(f"the payload of feedback {row.feedback_id} is invalid")
-        return body | payload
+    def _view(self, row: FeedbackRow) -> FeedbackView:
+        opened = self._open_feedback(row)
+        if opened is None:  # erased: the record and its evidence stay, the caller data is gone
+            body = json.loads(row.record_json)
+            return _feedback_view(row, body | {"untrusted_metadata": {}}, erased=True)
+        return _feedback_view(row, opened, erased=False)
+
+    def _open_feedback(self, row: FeedbackRow) -> dict[str, Any] | None:
+        return open_feedback(self.store, self.payloads, row)
+
+    def payload_state(self, row: FeedbackRow) -> str:
+        return feedback_payload_state(self.store, row)
 
     def rekey_feedback(self) -> int:
         """``secure-data`` key rotation: re-seal every feedback payload under the active key."""
@@ -668,6 +777,141 @@ class ProductionMonitor:
 
         return self.store.rekey_feedback(reseal)
 
+    # -- erasure and retention (Phase 5) ----------------------------------------------------
+    def erase_feedback(
+        self,
+        feedback_id: str,
+        *,
+        reason: Literal["request", "retention"] = "request",
+        actor: Mapping[str, Any] | None = None,
+        accept_residual_copies: bool = False,
+    ) -> FeedbackErasureView:
+        """Destroy a feedback's sealed payload (inputs, output, expected, caller metadata) and
+        keep its minimal evidence (ids, hashes, evaluation, the erasure record).
+
+        Fails closed, changing nothing: a record whose caller data is not all sealed
+        (``feedback_not_sealed``: migrate it first), a frozen example whose re-optimization is
+        still pending, or one whose dependents cannot be checked (``feedback_in_use``). Copies
+        erasure cannot reach (the challenger dataset version and job built from it, a keyed
+        invocation's sealed output) refuse too, unless ``accept_residual_copies`` - an explicit
+        policy decision that is recorded, and that makes the result ``fully_erased: false``.
+        Idempotent: an erased feedback returns its stored erasure."""
+        row = self.store.feedback(feedback_id)
+        if row is None:
+            raise FeedbackNotFound(f"no feedback {feedback_id}")
+        done = self.store.erasure(feedback_id)
+        if done is not None:
+            return _erasure_view(done, created=False)
+        state = self.payload_state(row)
+        if state != "sealed":
+            raise FeedbackNotSealed(
+                f"feedback {feedback_id} keeps caller data outside its sealed payload ({state}); "
+                "run `python -m api.tenancy migrate-feedback` first",
+                state=state,
+            )
+        trigger_id = self.store.frozen_trigger(feedback_id)
+        residual = self._residual_copies(row, trigger_id)
+        if residual and not accept_residual_copies:
+            raise FeedbackInUse(
+                f"feedback {feedback_id} was copied where erasure cannot reach "
+                f"({', '.join(c['kind'] for c in residual)}); delete those first, or accept "
+                "the residual copies explicitly",
+                reason="residual_copies",
+                copies=",".join(sorted({c["kind"] for c in residual})),
+            )
+        sha = json.loads(row.record_json)["payload_sha256"]
+        who = dict(actor or {})
+        record = {
+            "record_schema": ERASURE_SCHEMA,
+            "feedback_id": feedback_id,
+            "inference_id": row.inference_id,
+            "reason": reason,
+            "actor": {"user_id": who.get("user_id"), "key_id": who.get("key_id")},
+            "erased": list(_PAYLOAD_V2),
+            "kept": list(ERASURE_KEPT),
+            "residual_copies": residual,
+            "residual_copies_accepted": bool(residual),
+            "fully_erased": not residual,
+        }
+        try:  # the store re-checks the freeze inside the erasing transaction
+            stored, created = self.store.erase_payload(
+                feedback_id, sha, canonical_json(record), frozen_trigger=trigger_id
+            )
+        except Conflict:
+            raise FeedbackInUse(
+                f"feedback {feedback_id} was frozen into a re-optimization while it was being "
+                "erased; nothing was erased, retry to judge its new dependents",
+                reason="concurrent_change",
+            ) from None
+        return _erasure_view(stored, created=created)
+
+    def _residual_copies(self, row: FeedbackRow, trigger_id: str | None) -> list[dict[str, Any]]:
+        """Where this feedback's data was copied, as ids only. Raises ``FeedbackInUse`` when a
+        dependent is pending or cannot be checked (fail closed: never guessed)."""
+        copies: list[dict[str, Any]] = []
+        if trigger_id is not None:
+            reopt = self.store.reoptimization(trigger_id)
+            if reopt is None or reopt.state in (ReoptState.CLAIMED, ReoptState.DATASET_CREATED):
+                raise FeedbackInUse(
+                    f"feedback {row.feedback_id} is frozen into re-optimization {trigger_id}, "
+                    "which has not finished; erasing it now would break that re-optimization",
+                    reason="reoptimization_pending",
+                    trigger_id=trigger_id,
+                )
+            if reopt.dataset_version is not None and reopt.dataset_id is not None:
+                kept = None
+                if reopt.state is ReoptState.JOB_CREATED and reopt.detail:
+                    kept = json.loads(reopt.detail).get("kept_feedback_ids")
+                # FAILED after its dataset was built: which rows it kept is no longer recorded,
+                # so the feedback is assumed copied (never assumed absent)
+                if kept is None or row.feedback_id in kept:
+                    if self.datasets is None:
+                        raise FeedbackInUse(
+                            f"feedback {row.feedback_id} was copied into dataset "
+                            f"{reopt.dataset_id} v{reopt.dataset_version}, which this process "
+                            "cannot inspect",
+                            reason="dependency_unverifiable",
+                            trigger_id=trigger_id,
+                        )
+                    version = self.datasets.get_version(reopt.dataset_id, reopt.dataset_version)
+                    if self.datasets.repo.live_uploads_with_hash(version.spec.content_hash):
+                        copies.append(
+                            {
+                                "kind": "dataset_version",
+                                "trigger_id": trigger_id,
+                                "dataset_id": reopt.dataset_id,
+                                "dataset_version": reopt.dataset_version,
+                                "upload_id": version.upload_id,
+                            }
+                        )
+                    if reopt.job_id is not None:  # its attempts hold model answers on the row
+                        copies.append(
+                            {
+                                "kind": "challenger_job",
+                                "trigger_id": trigger_id,
+                                "job_id": reopt.job_id,
+                            }
+                        )
+        if self.deployments.store.invocation_output(row.inference_id) is not None:
+            copies.append({"kind": "invocation_output", "inference_id": row.inference_id})
+        return copies
+
+    def erasure(self, feedback_id: str) -> FeedbackErasureView:
+        stored = self.store.erasure(feedback_id)
+        if stored is None:
+            raise FeedbackNotFound(f"feedback {feedback_id} was not erased")
+        return _erasure_view(stored, created=False)
+
+    def expired_feedback(self, days: int, now: datetime | None = None) -> list[str]:
+        """Feedback received more than ``days`` ago whose payload is not erased yet."""
+        cutoff = (now or self.now()).astimezone(UTC) - timedelta(days=days)
+        erased = {e.feedback_id for e in self.store.erasures()}  # one query, not one per row
+        return [
+            r.feedback_id
+            for r in self.store.all_feedback()
+            if _when(r.received_at) < cutoff and r.feedback_id not in erased
+        ]
+
     def _feedback_in(
         self, ctx: _Context, records: Sequence[Mapping[str, Any]]
     ) -> list[dict[str, Any]]:
@@ -677,6 +921,8 @@ class ProductionMonitor:
             if row.inference_id not in ids:
                 continue
             body = self._open_feedback(row)
+            if body is None:  # erased (Phase 5): its row data is gone, so it measures nothing
+                continue
             if body["workflow_version"] != ctx.version_id or body["feedback_id"] != row.feedback_id:
                 raise MonitoringIntegrityError(f"feedback {row.feedback_id} is inconsistent")
             out.append(body)
@@ -1228,7 +1474,10 @@ class ProductionMonitor:
             return canonical_hash({n: values[n] for n in inputs if values.get(n) is not None})
 
         existing = {key(row) for _, row in rows}
-        examples = [self._open_feedback(self._feedback_row(fid)) for fid in sorted(frozen)]
+        opened = [self._open_feedback(self._feedback_row(fid)) for fid in sorted(frozen)]
+        if any(fb is None for fb in opened):  # erasure refuses this; an offline edit does not
+            raise _ReoptBlocked("frozen_feedback_erased", "a frozen example was erased")
+        examples = [fb for fb in opened if fb is not None]
         excluded: dict[str, str] = {}
         by_input: dict[str, list[dict[str, Any]]] = {}
         for fb in examples:
@@ -1672,12 +1921,80 @@ def _challenger_job_id(trigger_id: str) -> str:
     return "j-" + canonical_hash({"trigger_id": trigger_id, "job": 1})[:24]
 
 
-# the row data of a feedback: sealed under the workspace key when a keyring is configured
-_PAYLOAD = ("inputs", "output", "expected")
+# what a caller supplied with a feedback: sealed under the workspace key when a keyring is
+# configured. v1 (#33 era): the row data only, the caller metadata stayed in the record. v2
+# (Phase 5): the caller metadata too, so the record holds nothing a caller wrote.
+_PAYLOAD_V1 = ("inputs", "output", "expected")
+_PAYLOAD_V2 = (*_PAYLOAD_V1, "untrusted_metadata")
 
 
-def _feedback_view(row: FeedbackRow) -> FeedbackView:
+def _payload_fits(body: Mapping[str, Any], payload: Any) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    if set(payload) == set(_PAYLOAD_V1):
+        return "untrusted_metadata" in body
+    return set(payload) == set(_PAYLOAD_V2) and "untrusted_metadata" not in body
+
+
+class PayloadSource(Protocol):
+    """What opening a feedback needs from a store (``SQLiteMonitoringStore``, or the read-only
+    view of a database the offline migration inspects)."""
+
+    def feedback_payload(self, feedback_id: str) -> tuple[str, bytes] | None: ...
+
+    def erasure(self, feedback_id: str) -> ErasureRow | None: ...
+
+
+def open_feedback(
+    store: PayloadSource, payloads: BlobCipher | None, row: FeedbackRow
+) -> dict[str, Any] | None:
+    """The full feedback record: a sealed payload is opened (AES-GCM, bound to this workspace
+    and the payload hash the record names) and re-hashed; a record from before sealing carries
+    its payload inline. ``None``: the payload was erased (Phase 5) - only the record, its hashes
+    and its evaluation are left. Anything else is refused, never repaired."""
     body = json.loads(row.record_json)
+    sha = body.pop("payload_sha256", None)
+    if sha is None:
+        if set(_PAYLOAD_V2) - set(body):
+            raise MonitoringIntegrityError(f"feedback {row.feedback_id} has no payload")
+        return body
+    stored = store.feedback_payload(row.feedback_id)
+    if stored is None or stored[0] != sha:
+        raise MonitoringIntegrityError(f"the payload of feedback {row.feedback_id} is missing")
+    if stored[1] == ERASED:
+        erasure = store.erasure(row.feedback_id)
+        if erasure is None or erasure.payload_sha256 != sha:  # the triggers forbid this
+            raise MonitoringIntegrityError(
+                f"the payload of feedback {row.feedback_id} is erased without a record"
+            )
+        return None
+    if payloads is None:
+        raise MonitoringIntegrityError(f"the payload of feedback {row.feedback_id} is missing")
+    try:
+        payload = json.loads(payloads.open(stored[1], sha))
+    except (DecryptionError, NotEncrypted, UnknownKey, ValueError):
+        raise MonitoringIntegrityError(
+            f"the payload of feedback {row.feedback_id} cannot be opened"
+        ) from None
+    if canonical_hash(payload) != sha or not _payload_fits(body, payload):
+        raise MonitoringIntegrityError(f"the payload of feedback {row.feedback_id} is invalid")
+    return body | payload
+
+
+def feedback_payload_state(store: PayloadSource, row: FeedbackRow) -> str:
+    """``inline`` (from before sealing), ``sealed_v1`` (row data sealed, caller metadata still
+    in the record), ``sealed`` (everything caller-supplied sealed) or ``erased``. Read from the
+    stored shapes only: nothing is opened."""
+    body = json.loads(row.record_json)
+    if "payload_sha256" not in body:
+        return "inline"
+    stored = store.feedback_payload(row.feedback_id)
+    if stored is not None and stored[1] == ERASED:
+        return "erased"
+    return "sealed_v1" if "untrusted_metadata" in body else "sealed"
+
+
+def _feedback_view(row: FeedbackRow, body: Mapping[str, Any], *, erased: bool) -> FeedbackView:
     return FeedbackView(
         record_schema=body["record_schema"],
         feedback_id=row.feedback_id,
@@ -1692,6 +2009,26 @@ def _feedback_view(row: FeedbackRow) -> FeedbackView:
         untrusted_metadata=body["untrusted_metadata"],
         metadata_trusted=False,
         authenticated_principal=body.get("authenticated_principal"),
+        payload_erased=erased,
+    )
+
+
+def _erasure_view(row: ErasureRow, *, created: bool) -> FeedbackErasureView:
+    body = json.loads(row.erasure_json)
+    return FeedbackErasureView(
+        record_schema=body["record_schema"],
+        feedback_id=row.feedback_id,
+        inference_id=body["inference_id"],
+        reason=body["reason"],
+        actor=body["actor"],
+        erased=body["erased"],
+        kept=body["kept"],
+        payload_sha256=row.payload_sha256,
+        residual_copies=body["residual_copies"],
+        residual_copies_accepted=body["residual_copies_accepted"],
+        fully_erased=body["fully_erased"],
+        erased_at=row.erased_at,
+        created=created,
     )
 
 
@@ -1716,6 +2053,7 @@ def _decision_view(row: DecisionRow, created: bool) -> TriggerDecisionView:
 
 __all__ = [
     "DriftConfig",
+    "FeedbackErasureView",
     "FeedbackRequest",
     "MonitoringError",
     "MonitoringPolicy",

@@ -295,11 +295,21 @@ data in free text is not detected and is sent as uploaded.
 * No raw value, key or secret reaches a log line, an error body or the audit trail.
 * Security failures (missing key, unknown key, tamper, audit unavailable) fail closed.
 
+## 9. Outbound data and feedback privacy (Phase 5)
+
+Uploads are screened when they are stored (section 4). Inference inputs and feedback values do
+not pass through an upload. A per-workspace outbound policy now screens them before any provider
+request (audit finding F2). New workspaces block credentials, cards, SSNs and IBANs by default.
+Workspaces from before Phase 5 keep `off` until an operator opts them in. Feedback caller
+metadata is sealed and held to an allowlist. Feedback payloads can be erased (OWNER-only,
+audited), and a retention period can be applied. See [privacy_retention.md](privacy_retention.md).
+
 ## Deferred
 
 * Metadata (SQLite) encryption; key management service integration; per-tenant master keys.
 * Rate limiting and an audit-trail size bound (failed authentication is recorded per request).
-* Detection of unstructured PII (names, addresses, free text); a policy per workspace.
+* Detection of unstructured PII (names, addresses, free text); a per-workspace UPLOAD policy
+  (outbound data has one: section 9).
 * Streaming upload and parse (bodies are still held in memory, bounded by the size limit).
 * Malware scanning (only plain-text CSV / JSONL is accepted, which is never executed).
 * Crypto-shredding of backups; deletion of experiment artifacts (immutable by design).

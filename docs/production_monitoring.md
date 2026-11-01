@@ -52,6 +52,15 @@ hash, or the read fails closed (`monitoring_integrity_error`).
   `feedback_conflict` (409). Feedback rows are immutable (UPDATE/DELETE triggers).
 * Until #32, actor/source are opaque: they enter no identity, aggregate, drift statistic or
   decision.
+* Phase 5 ([privacy_retention.md](privacy_retention.md)):
+  * `inputs`, `output`, `expected` and `untrusted_metadata` are ONE sealed payload. The record
+    keeps only its hash.
+  * `actor` and `source` must pass a strict allowlist, and no credential is accepted.
+  * `inputs` and `expected` pass the workspace's outbound policy (`422 outbound_data_blocked`).
+  * `POST feedback/{id}/erase` (OWNER-only) replaces the payload with a tombstone. It keeps the
+    ids, the hash, the evaluation and an immutable erasure record.
+  * An erased feedback reads with `payload_erased: true` and is skipped by aggregates, drift and
+    new challenger datasets.
 
 ## 3. Aggregates (`wynk-monitoring-summary/1`)
 

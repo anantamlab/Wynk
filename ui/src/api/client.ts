@@ -227,6 +227,10 @@ export const ERROR_COPY: Record<string, { kind: ApiErrorKind; title: string }> =
   feedback_mismatch: { kind: "invalid", title: "The feedback does not match the served inference" },
   feedback_conflict: { kind: "conflict", title: "This inference already has different feedback" },
   feedback_not_found: { kind: "not_found", title: "Feedback not found" },
+  // Phase 5 privacy / retention / outbound data
+  outbound_data_blocked: { kind: "invalid", title: "This workspace's data policy blocks sending that data to a model" },
+  feedback_not_sealed: { kind: "conflict", title: "This feedback must be migrated before it can be erased" },
+  feedback_in_use: { kind: "conflict", title: "This feedback is still used or copied where erasure cannot reach" },
   monitoring_policy_not_found: { kind: "not_found", title: "Monitoring policy not found" },
   invalid_monitoring_window: { kind: "invalid", title: "The monitoring window is invalid" },
   trigger_not_found: { kind: "not_found", title: "Trigger decision not found" },

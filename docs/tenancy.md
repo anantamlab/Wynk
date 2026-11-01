@@ -254,6 +254,15 @@ idempotently register that exact key (hash only) for `ws-default`. The UI dev pr
 * Artifact CLI: `python -m experiments.artifacts verify --data-dir D --workspace ws-... --job
   j-...` (the partition's stores are checked against `--workspace`).
 
+* Phase 5 privacy commands (see [privacy_retention.md](privacy_retention.md)):
+  * `migrate-feedback`: offline, verified sealing of legacy feedback. `--dry-run` reads only.
+    `--backup-dir` is required otherwise and must be outside the data directory.
+  * `erase-feedback`: erase one feedback payload, audited as `system:operator`.
+  * `purge-feedback`: apply `WYNK_FEEDBACK_RETENTION_DAYS`. Unset means keep. It never accepts
+    residual copies.
+  * `outbound-policy`: show or set a workspace's outbound data policy, as an audited new revision.
+* `POST feedback/{id}/erase` is OWNER-only (`admin` scope), like deletion and the audit trail.
+
 ## 10. Proof
 
 `tests/test_tenancy.py`:
